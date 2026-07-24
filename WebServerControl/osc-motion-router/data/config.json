@@ -1,0 +1,70 @@
+{
+  "web_port": 8766,
+  "osc_input": {
+    "enabled": true,
+    "bind_ip": "0.0.0.0",
+    "port": 9000,
+    "accel_address": "/tracker",
+    "gyro_address": "/tracker",
+    "format": "grouped",
+    "accel_indexes": [
+      0,
+      1,
+      2
+    ],
+    "gyro_indexes": [
+      3,
+      4,
+      5
+    ]
+  },
+  "osc_outputs": [
+    {
+      "id": "osc-out-1",
+      "name": "Local OSC",
+      "host": "127.0.0.1",
+      "port": 9001
+    }
+  ],
+  "midi": {
+    "port_name": "VirtualPortMIDI 1",
+    "channel": 1
+  },
+  "routes": [
+    {
+      "id": "route_1784908068965",
+      "name": "Route 1",
+      "enabled": true,
+      "source": "gyro.x",
+      "processors": [
+        {
+          "type": "smooth",
+          "alpha": 0.1
+        },
+        {
+          "type": "remap",
+          "input_min": 0,
+          "input_max": 1,
+          "output_min": 0,
+          "output_max": 127,
+          "clamp": true
+        }
+      ],
+      "output": {
+        "type": "midi_cc",
+        "port_name": "VirtualPortMIDI 1",
+        "channel": 1,
+        "cc": 21
+      }
+    }
+  ],
+  "trajectory": {
+    "recognition_threshold": 15,
+    "action": {
+      "type": "osc",
+      "host": "127.0.0.1",
+      "port": 9001,
+      "address": "/motion/recognized"
+    }
+  }
+}

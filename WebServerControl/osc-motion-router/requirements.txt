@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+python-osc
+mido
+python-rtmidi
+numpy
