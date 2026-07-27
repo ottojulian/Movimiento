@@ -175,7 +175,7 @@ function setupCanvasDPI(canvas) {
 async function loadInitialData() {
     try {
         // 1. Fetch config
-        const resConfig = await fetch('/api/config');
+        const resConfig = await fetch('/api/config?_t=' + Date.now(), { cache: 'no-store' });
         currentConfig = await resConfig.json();
         populateUIFromConfig();
         
@@ -307,7 +307,7 @@ function saveConfigDebounced() {
 
 async function pollLiveState() {
     try {
-        const res = await fetch('/api/live');
+        const res = await fetch('/api/live?_t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         
         // 1. Update numerical labels
@@ -346,7 +346,7 @@ async function pollLiveState() {
 async function pollSlowStreams() {
     try {
         // 1. Poll Status
-        const resStatus = await fetch('/api/status');
+        const resStatus = await fetch('/api/status?_t=' + Date.now(), { cache: 'no-store' });
         const status = await resStatus.json();
         
         // OSC Server indicator
@@ -385,6 +385,11 @@ async function pollSlowStreams() {
         updateTrajectoryStatusUI(status.recording);
     } catch (err) {
         console.error("Error in slow polling loop:", err);
+        showError("Disconnected from server. Trying to reconnect...");
+        el.oscStatusIndicator.className = "indicator stopped";
+        el.oscStatusText.textContent = "Offline";
+        el.midiStatusIndicator.className = "indicator stopped";
+        el.midiStatusText.textContent = "Offline";
     }
 }
 
@@ -500,7 +505,7 @@ function renderCanvasPlot(canvas, buffer, colors, unit) {
 
 async function refreshOSCMonitor() {
     try {
-        const res = await fetch('/api/osc/messages');
+        const res = await fetch('/api/osc/messages?_t=' + Date.now(), { cache: 'no-store' });
         const msgs = await res.json();
         
         if (msgs.length === 0) {
@@ -863,7 +868,7 @@ async function toggleRouteEnabled(routeId, isChecked) {
 
 async function refreshMidiPorts() {
     try {
-        const res = await fetch('/api/midi/ports');
+        const res = await fetch('/api/midi/ports?_t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         
         let html = '';
@@ -894,7 +899,7 @@ async function refreshMidiPorts() {
 
 async function refreshRecordingsList() {
     try {
-        const res = await fetch('/api/recordings');
+        const res = await fetch('/api/recordings?_t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         
         if (data.recordings.length === 0) {
@@ -983,7 +988,7 @@ async function deleteRecording(recId) {
 
 async function refreshTrajectoriesList() {
     try {
-        const res = await fetch('/api/trajectories');
+        const res = await fetch('/api/trajectories?_t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         
         if (data.trajectories.length === 0) {

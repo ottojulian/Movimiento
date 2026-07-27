@@ -4,8 +4,10 @@ import socket
 import time
 import threading
 import webbrowser
+import urllib.request
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -40,6 +42,15 @@ if initial_config.get("osc_input", {}).get("enabled", True):
 
 # --- FastAPI App Setup ---
 app = FastAPI(title="OSC Motion Router API")
+
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 # Request Models
 class ConfigUpdateModel(BaseModel):
@@ -80,6 +91,25 @@ class TrajectoryRecognizeModel(BaseModel):
 
 
 # --- API Endpoints ---
+
+@app.post("/api/shutdown")
+def shutdown_endpoint():
+    def force_exit():
+        time.sleep(0.5)
+        try:
+            print("Received remote shutdown request. Cleaning up resources...")
+            osc_receiver.stop()
+            trajectory_manager.stop_replay()
+            config_manager.save_immediate()
+            midi_manager.close_all()
+        except Exception as e:
+            print(f"Error during shutdown: {e}", file=sys.stderr)
+        finally:
+            # Force close python process
+            os._exit(0)
+
+    threading.Thread(target=force_exit, name="RemoteShutdownThread", daemon=True).start()
+    return {"status": "shutdown_triggered"}
 
 @app.get("/api/status")
 def get_status():
@@ -297,8 +327,43 @@ def open_browser(port: int):
     except Exception as e:
         print(f"Failed to auto-open browser: {e}", file=sys.stderr)
 
+def try_shutdown_existing_instance(port: int) -> bool:
+    url = f"http://127.0.0.1:{port}/api/shutdown"
+    try:
+        req = urllib.request.Request(url, method="POST")
+        with urllib.request.urlopen(req, timeout=1.0) as response:
+            if response.status == 200:
+                print(f"Found existing instance running on port {port}. Sent shutdown signal.")
+                return True
+    except Exception:
+        pass
+    return False
+
+def wait_for_port_to_be_free(port: int, timeout: float = 3.0) -> bool:
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return True
+        except OSError:
+            time.sleep(0.1)
+    return False
+
 if __name__ == "__main__":
     configured_port = config_manager.get("web_port", 8765)
+    
+    # Clean up any potential orphaned instances on ports in our range
+    print("Checking for orphaned instances...")
+    shutdown_any = False
+    for p in range(configured_port, configured_port + 5):
+        if try_shutdown_existing_instance(p):
+            shutdown_any = True
+            
+    if shutdown_any:
+        print("Waiting for ports to clear...")
+        wait_for_port_to_be_free(configured_port, timeout=3.0)
+
     final_port = find_available_port(configured_port)
     
     # Update config file if the port changed
