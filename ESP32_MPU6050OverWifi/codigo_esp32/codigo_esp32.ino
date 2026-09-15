@@ -48,7 +48,7 @@ WifiNetwork networks[] = {
     IPAddress(10, 1, 101, 170),
     IPAddress(10, 1, 103, 254),
     IPAddress(255, 255, 252, 0),
-    IPAddress(10, 1, 101, 180)
+    IPAddress(10, 1, 101, 205)
   }
 };
 
