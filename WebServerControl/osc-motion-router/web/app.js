@@ -17,6 +17,8 @@ let currentConfig = {
     routes: [],
     trajectory: {
         recognition_threshold: 15.0,
+        deviation_threshold: 0.035,
+        recognition_hold: 1.0,
         action: {
             type: "osc",
             host: "127.0.0.1",
@@ -44,8 +46,6 @@ const el = {
     oscStatusText: document.getElementById('osc-status-text'),
     midiStatusIndicator: document.getElementById('midi-status-indicator'),
     midiStatusText: document.getElementById('midi-status-text'),
-    replayStatusIndicator: document.getElementById('replay-status-indicator'),
-    replayStatusText: document.getElementById('replay-status-text'),
     globalRateText: document.getElementById('global-rate-text'),
     errorBanner: document.getElementById('error-banner'),
     
@@ -79,6 +79,8 @@ const el = {
     // Canvas
     accelPlot: document.getElementById('accel-plot'),
     gyroPlot: document.getElementById('gyro-plot'),
+    miniAccelPlot: document.getElementById('mini-accel-plot'),
+    miniGyroPlot: document.getElementById('mini-gyro-plot'),
     
     // Routes list and editor
     routesContainer: document.getElementById('routes-container'),
@@ -92,7 +94,6 @@ const el = {
     routeOutType: document.getElementById('route-out-type'),
     outGroupMidi: document.getElementById('out-group-midi'),
     outGroupOsc: document.getElementById('out-group-osc'),
-    routeMidiPort: document.getElementById('route-midi-port'),
     routeMidiChan: document.getElementById('route-midi-chan'),
     routeMidiCc: document.getElementById('route-midi-cc'),
     routeOscHost: document.getElementById('route-osc-host'),
@@ -115,32 +116,37 @@ const el = {
     oscTestValue: document.getElementById('osc-test-value'),
     btnSendOscTest: document.getElementById('btn-send-osc-test'),
     
-    // Recording
-    recordName: document.getElementById('record-name'),
-    btnStartRecord: document.getElementById('btn-start-record'),
-    btnStopRecord: document.getElementById('btn-stop-record'),
-    recordingsTableBody: document.getElementById('recordings-table-body'),
-    
     // Trajectories
     trajLabel: document.getElementById('traj-label'),
-    trajDuration: document.getElementById('traj-duration'),
-    btnTrajRecordExample: document.getElementById('btn-traj-record-example'),
-    btnTrajRecognize: document.getElementById('btn-traj-recognize'),
+    trajMidiChan: document.getElementById('traj-midi-chan'),
+    trajMidiCc: document.getElementById('traj-midi-cc'),
+    btnTrajRecordStart: document.getElementById('btn-traj-record-start'),
+    btnTrajRecordStop: document.getElementById('btn-traj-record-stop'),
+    btnTrajRecognizeStart: document.getElementById('btn-traj-recognize-start'),
+    btnTrajRecognizeStop: document.getElementById('btn-traj-recognize-stop'),
     trajProgressCard: document.getElementById('traj-progress-card'),
     trajProgressText: document.getElementById('traj-progress-text'),
     trajectoryExamplesList: document.getElementById('trajectory-examples-list'),
+    recognitionMatchContainer: document.getElementById('recognition-match-container'),
     recognitionMatchLabel: document.getElementById('recognition-match-label'),
     recognitionMatchDist: document.getElementById('recognition-match-dist'),
+    btnSetIdlePos: document.getElementById('btn-set-idle-pos'),
     trajThreshold: document.getElementById('traj-threshold'),
+    trajDeviationThreshold: document.getElementById('traj-deviation-threshold'),
+    trajRecognitionHold: document.getElementById('traj-recognition-hold'),
     trajActionType: document.getElementById('traj-action-type'),
     trajActionOscGroup: document.getElementById('traj-action-osc-group'),
     trajActionMidiGroup: document.getElementById('traj-action-midi-group'),
     trajActionOscHost: document.getElementById('traj-action-osc-host'),
     trajActionOscPort: document.getElementById('traj-action-osc-port'),
     trajActionOscAddr: document.getElementById('traj-action-osc-addr'),
-    trajActionMidiPort: document.getElementById('traj-action-midi-port'),
     trajActionMidiChan: document.getElementById('traj-action-midi-chan'),
-    trajActionMidiCc: document.getElementById('traj-action-midi-cc')
+    trajActionMidiCc: document.getElementById('traj-action-midi-cc'),
+    
+    // Session Export/Import Controls
+    sessionFilename: document.getElementById('session-filename'),
+    btnExportSession: document.getElementById('btn-export-session'),
+    importFileInput: document.getElementById('import-file-input')
 };
 
 // Debounce state for saves
@@ -150,6 +156,8 @@ let saveConfigTimeout = null;
 window.addEventListener('DOMContentLoaded', async () => {
     setupCanvasDPI(el.accelPlot);
     setupCanvasDPI(el.gyroPlot);
+    setupCanvasDPI(el.miniAccelPlot);
+    setupCanvasDPI(el.miniGyroPlot);
     
     await loadInitialData();
     
@@ -174,21 +182,52 @@ function setupCanvasDPI(canvas) {
 
 async function loadInitialData() {
     try {
-        // 1. Fetch config
+        // 1. Fetch config from server
         const resConfig = await fetch('/api/config?_t=' + Date.now(), { cache: 'no-store' });
-        currentConfig = await resConfig.json();
+        const serverConfig = await resConfig.json();
+        
+        // 2. Browser Persistence Sync: Restore unsaved local values if they exist
+        const localSaved = localStorage.getItem('osc_motion_router_persisted_config');
+        if (localSaved) {
+            try {
+                const parsedLocal = JSON.parse(localSaved);
+                // Merge local persistent adjustments with server config structure to prevent gaps
+                currentConfig = { ...serverConfig, ...parsedLocal };
+                console.log("Restored un-saved transient variables from Browser local storage.");
+            } catch (e) {
+                currentConfig = serverConfig;
+            }
+        } else {
+            currentConfig = serverConfig;
+        }
+
         populateUIFromConfig();
         
-        // 2. Fetch MIDI ports
-        await refreshMidiPorts();
+        // Push restored configs back to server to synchronize active router state
+        await pushConfigToServer(currentConfig);
         
-        // 3. Load recorded sessions
-        await refreshRecordingsList();
+        // 3. Fetch MIDI ports
+        await refreshMidiPorts();
         
         // 4. Load saved trajectory examples
         await refreshTrajectoriesList();
     } catch (err) {
         showError("Failed to communicate with server on startup: " + err.message);
+    }
+}
+
+async function pushConfigToServer(configData) {
+    try {
+        const res = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(configData)
+        });
+        const out = await res.json();
+        currentConfig = out.config;
+        showError(null);
+    } catch (err) {
+        showError("Failed to synchronize configuration with server: " + err.message);
     }
 }
 
@@ -230,6 +269,8 @@ function populateUIFromConfig() {
         };
     }
     el.trajThreshold.value = currentConfig.trajectory.recognition_threshold || 15.0;
+    el.trajDeviationThreshold.value = currentConfig.trajectory.deviation_threshold ?? 0.035;
+    el.trajRecognitionHold.value = currentConfig.trajectory.recognition_hold ?? 1.0;
     const action = currentConfig.trajectory.action || { type: "osc" };
     el.trajActionType.value = action.type || "osc";
     
@@ -266,11 +307,13 @@ function gatherConfigFromUI() {
     
     // Trajectory config
     currentConfig.trajectory.recognition_threshold = parseFloat(el.trajThreshold.value) || 15.0;
+    currentConfig.trajectory.deviation_threshold = parseFloat(el.trajDeviationThreshold.value) ?? 0.035;
+    currentConfig.trajectory.recognition_hold = parseFloat(el.trajRecognitionHold.value) ?? 1.0;
     
     const trajType = el.trajActionType.value;
     currentConfig.trajectory.action.type = trajType;
     if (trajType === "midi") {
-        currentConfig.trajectory.action.port_name = el.trajActionMidiPort.value;
+        currentConfig.trajectory.action.port_name = el.midiGlobalPort.value;
         currentConfig.trajectory.action.channel = parseInt(el.trajActionMidiChan.value) || 1;
         currentConfig.trajectory.action.cc = parseInt(el.trajActionMidiCc.value) || 22;
         // Keep placeholder defaults for osc
@@ -284,6 +327,10 @@ function gatherConfigFromUI() {
 
 async function saveConfigImmediate() {
     gatherConfigFromUI();
+    
+    // Save to LocalStorage instantly for complete offline/crash browser robustness
+    localStorage.setItem('osc_motion_router_persisted_config', JSON.stringify(currentConfig));
+
     try {
         const res = await fetch('/api/config', {
             method: 'POST',
@@ -325,18 +372,11 @@ async function pollLiveState() {
         // 3. Render plots
         renderCanvasPlot(el.accelPlot, accelBuffer, ["#ff453a", "#30d158", "#0a84ff"], "G");
         renderCanvasPlot(el.gyroPlot, gyroBuffer, ["#ffd60a", "#bf5af2", "#ff9f0a"], "rad/s");
+        renderCanvasPlot(el.miniAccelPlot, accelBuffer, ["#ff453a", "#30d158", "#0a84ff"], "G", false);
+        renderCanvasPlot(el.miniGyroPlot, gyroBuffer, ["#ffd60a", "#bf5af2", "#ff9f0a"], "rad/s", false);
         
         // 4. Update status rates and indicators
         el.globalRateText.textContent = data.packet_rate;
-        
-        // Replay status update
-        if (data.replay.replay_active) {
-            el.replayStatusIndicator.className = "indicator running";
-            el.replayStatusText.innerHTML = `Replaying: <strong>${data.replay.replay_name}</strong> (${data.replay.replay_progress.toFixed(0)}%)`;
-        } else {
-            el.replayStatusIndicator.className = "indicator";
-            el.replayStatusText.textContent = "Replay: Idle";
-        }
     } catch (err) {
         // Don't show modal errors for frequent fast polling, but show status
         el.globalRateText.textContent = "--";
@@ -394,21 +434,50 @@ async function pollSlowStreams() {
 }
 
 function updateTrajectoryStatusUI(recStatus) {
-    if (recStatus.test_capture_active) {
+    if (recStatus.test_capture_active && recStatus.is_recording_example) {
         el.trajProgressCard.style.display = 'block';
-        if (recStatus.countdown > 0) {
-            el.trajProgressText.innerHTML = `<span class="text-warning">COUNTDOWN: ${recStatus.countdown.toFixed(1)}s</span>`;
-        } else {
-            el.trajProgressText.innerHTML = `<span class="text-success">RECORDING GESTURE ACTIVE NOW</span>`;
-        }
+        el.trajProgressText.innerHTML = `<span class="text-success">RECORDING TEMPLATE ACTIVE NOW - CLICK STOP & SAVE TO FINISH</span>`;
+        el.btnTrajRecordStart.style.display = 'none';
+        el.btnTrajRecordStop.style.display = 'inline-flex';
+        
+        el.btnTrajRecognizeStart.style.display = 'inline-flex';
+        el.btnTrajRecognizeStop.style.display = 'none';
+    } else if (recStatus.recognition_active) {
+        el.trajProgressCard.style.display = 'block';
+        el.trajProgressText.innerHTML = `<span class="text-success">CONTINUOUS RECOGNITION ACTIVE</span>`;
+        el.btnTrajRecordStart.style.display = 'inline-flex';
+        el.btnTrajRecordStop.style.display = 'none';
+        
+        el.btnTrajRecognizeStart.style.display = 'none';
+        el.btnTrajRecognizeStop.style.display = 'inline-flex';
     } else {
         el.trajProgressCard.style.display = 'none';
+        el.btnTrajRecordStart.style.display = 'inline-flex';
+        el.btnTrajRecordStop.style.display = 'none';
+        el.btnTrajRecognizeStart.style.display = 'inline-flex';
+        el.btnTrajRecognizeStop.style.display = 'none';
     }
 
     if (recStatus.recognition_result) {
         el.recognitionMatchLabel.textContent = recStatus.recognition_result;
-        el.recognitionMatchLabel.className = recStatus.recognition_triggered ? "text-success" : "text-warning";
+        
+        if (recStatus.recognition_triggered) {
+            el.recognitionMatchLabel.style.color = '#000000';
+            el.recognitionMatchDist.style.color = '#333333';
+            el.recognitionMatchContainer.style.backgroundColor = '#ffd60a'; // bright yellow
+        } else {
+            el.recognitionMatchLabel.style.color = 'var(--warning)';
+            el.recognitionMatchDist.style.color = 'var(--text-muted)';
+            el.recognitionMatchContainer.style.backgroundColor = '#0b0b0c';
+        }
+        
         el.recognitionMatchDist.textContent = `Distance: ${recStatus.recognition_distance.toFixed(2)}`;
+    } else {
+        el.recognitionMatchLabel.textContent = "No gesture matched";
+        el.recognitionMatchLabel.style.color = 'var(--text-muted)';
+        el.recognitionMatchDist.textContent = "Distance: --";
+        el.recognitionMatchDist.style.color = 'var(--text-muted)';
+        el.recognitionMatchContainer.style.backgroundColor = '#0b0b0c';
     }
 }
 
@@ -426,7 +495,7 @@ function pushToPlotBuffer(buffer, x, y, z) {
     }
 }
 
-function renderCanvasPlot(canvas, buffer, colors, unit) {
+function renderCanvasPlot(canvas, buffer, colors, unit, showLabels = true) {
     const ctx = canvas.getContext('2d');
     const width = canvas.width / (window.devicePixelRatio || 1);
     const height = canvas.height / (window.devicePixelRatio || 1);
@@ -477,7 +546,7 @@ function renderCanvasPlot(canvas, buffer, colors, unit) {
     axes.forEach((axis, colorIdx) => {
         const arr = buffer[axis];
         ctx.strokeStyle = colors[colorIdx];
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = showLabels ? 1.5 : 1.0;
         ctx.beginPath();
         
         for (let i = 0; i < arr.length; i++) {
@@ -495,10 +564,12 @@ function renderCanvasPlot(canvas, buffer, colors, unit) {
     });
     
     // Draw Text Labels for Limits
-    ctx.fillStyle = '#8e8e9a';
-    ctx.font = '10px monospace';
-    ctx.fillText(`${max.toFixed(2)} ${unit}`, 5, 12);
-    ctx.fillText(`${min.toFixed(2)} ${unit}`, 5, height - 5);
+    if (showLabels) {
+        ctx.fillStyle = '#8e8e9a';
+        ctx.font = '10px monospace';
+        ctx.fillText(`${max.toFixed(2)} ${unit}`, 5, 12);
+        ctx.fillText(`${min.toFixed(2)} ${unit}`, 5, height - 5);
+    }
 }
 
 // --- OSC MONITOR & LEARN ---
@@ -784,7 +855,7 @@ async function saveRoute() {
     
     const output = { type: outType };
     if (outType === 'midi_cc') {
-        output.port_name = el.routeMidiPort.value;
+        output.port_name = el.midiGlobalPort.value;
         output.channel = parseInt(el.routeMidiChan.value) || 1;
         output.cc = parseInt(el.routeMidiCc.value) || 0;
     } else {
@@ -836,7 +907,6 @@ function editRoute(routeId) {
     if (route.output.type === 'midi_cc') {
         el.outGroupMidi.style.display = 'grid';
         el.outGroupOsc.style.display = 'none';
-        el.routeMidiPort.value = route.output.port_name || '';
         el.routeMidiChan.value = route.output.channel || 1;
         el.routeMidiCc.value = route.output.cc || 0;
     } else {
@@ -878,109 +948,15 @@ async function refreshMidiPorts() {
             html = data.ports.map(p => `<option value="${p}">${p}</option>`).join('');
         }
         
-        // Populate global and route MIDI drop downs
+        // Populate global MIDI drop down
         el.midiGlobalPort.innerHTML = html;
-        el.trajActionMidiPort.innerHTML = `<option value="">Default (Global Port)</option>` + html;
-        el.routeMidiPort.innerHTML = `<option value="">Default (Global Port)</option>` + html;
         
         // Restore values
         if (currentConfig.midi.port_name) {
             el.midiGlobalPort.value = currentConfig.midi.port_name;
         }
-        if (currentConfig.trajectory.action.port_name) {
-            el.trajActionMidiPort.value = currentConfig.trajectory.action.port_name;
-        }
     } catch (err) {
         console.error("Failed to list MIDI ports:", err);
-    }
-}
-
-// --- RECORDING & REPLAY ---
-
-async function refreshRecordingsList() {
-    try {
-        const res = await fetch('/api/recordings?_t=' + Date.now(), { cache: 'no-store' });
-        const data = await res.json();
-        
-        if (data.recordings.length === 0) {
-            el.recordingsTableBody.innerHTML = `
-                <tr>
-                    <td colspan="3" style="text-align: center; color: var(--text-muted); font-style: italic; padding: 1rem;">No recordings saved yet.</td>
-                </tr>`;
-            return;
-        }
-        
-        let html = '';
-        data.recordings.forEach(rec => {
-            html += `
-                <tr>
-                    <td><strong style="color: var(--text);">${rec.name}</strong></td>
-                    <td style="font-family: monospace;">${rec.duration.toFixed(1)}s</td>
-                    <td>
-                        <button class="btn btn-sm btn-success" onclick="startReplay('${rec.id}')">Play</button>
-                        <button class="btn btn-sm" onclick="startReplayLoop('${rec.id}')">Loop</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteRecording('${rec.id}')">Del</button>
-                    </td>
-                </tr>`;
-        });
-        el.recordingsTableBody.innerHTML = html;
-    } catch (err) {
-        console.error("Error loading recordings:", err);
-    }
-}
-
-async function startReplay(recId) {
-    try {
-        const res = await fetch('/api/replay/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: recId, loop: false })
-        });
-        if (res.ok) {
-            // Replay started
-            showError(null);
-        } else {
-            const errData = await res.json();
-            showError("Replay failed to start: " + errData.detail);
-        }
-    } catch (err) {
-        showError("Replay error: " + err.message);
-    }
-}
-
-async function startReplayLoop(recId) {
-    try {
-        const res = await fetch('/api/replay/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: recId, loop: true })
-        });
-        if (!res.ok) {
-            const errData = await res.json();
-            showError("Replay Loop failed to start: " + errData.detail);
-        }
-    } catch (err) {
-        showError("Replay Loop error: " + err.message);
-    }
-}
-
-async function stopReplay() {
-    try {
-        await fetch('/api/replay/stop', { method: 'POST' });
-    } catch (err) {
-        console.error("Error stopping replay:", err);
-    }
-}
-
-async function deleteRecording(recId) {
-    if (!confirm("Are you sure you want to delete this recorded session?")) return;
-    try {
-        const res = await fetch(`/api/recordings/${recId}`, { method: 'DELETE' });
-        if (res.ok) {
-            await refreshRecordingsList();
-        }
-    } catch (err) {
-        showError("Failed to delete recording: " + err.message);
     }
 }
 
@@ -994,20 +970,49 @@ async function refreshTrajectoriesList() {
         if (data.trajectories.length === 0) {
             el.trajectoryExamplesList.innerHTML = `
                 <div style="text-align: center; color: var(--text-muted); font-size: 0.75rem; font-style: italic; padding: 1rem;">
-                    No gesture templates saved yet. Record 5+ examples for a label.
+                    No gesture templates saved yet.
                 </div>`;
             return;
         }
         
         let html = '';
         data.trajectories.forEach(traj => {
+            const ch = traj.midi_channel || 1;
+            const cc = traj.midi_cc || 22;
+            const variantsCount = (traj.vectors && traj.vectors.length) ? traj.vectors.length : 1;
+            
             html += `
-                <div class="trajectory-item">
-                    <div>
-                        <strong style="color: var(--accent);">${traj.label}</strong>
-                        <span style="font-size: 0.65rem; color: var(--text-muted); display: block;">Channels: [${traj.channels.join(',')}]</span>
+                <div class="trajectory-row-item" style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem; background-color: #1a1a1e; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 0.35rem;">
+                    <!-- Leftmost Section: Variant/Layer count indicator -->
+                    <div style="display: flex; align-items: center; justify-content: center; background-color: rgba(10, 132, 255, 0.1); border: 1px solid var(--accent); border-radius: 4px; padding: 0.2rem 0.4rem; font-size: 0.7rem; font-weight: 600; color: var(--accent); white-space: nowrap;" title="${variantsCount} variants/layers stored">
+                        L${variantsCount}
                     </div>
-                    <button class="btn btn-danger" style="padding: 0.125rem 0.25rem; font-size: 0.65rem; border-radius: 3px;" onclick="deleteTrajectoryExample('${traj.id}')">✕</button>
+
+                    <!-- Left Section: Label and Channels -->
+                    <div style="flex: 2; min-width: 130px; display: flex; flex-direction: column;">
+                        <strong style="color: var(--accent); font-size: 0.85rem;">${traj.label}</strong>
+                        <span style="font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Channels: ${traj.channels.join(',')}">
+                            [${traj.channels.join(',')}]
+                        </span>
+                    </div>
+                    
+                    <!-- Mid Section: Compact inputs for MIDI CC -->
+                    <div style="flex: 3; display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end;">
+                        <div style="display: flex; align-items: center; gap: 0.25rem;">
+                            <span style="font-size: 0.65rem; color: var(--text-muted); white-space: nowrap;">MIDI Ch:</span>
+                            <input type="number" id="midi-chan-${traj.id}" value="${ch}" min="1" max="16" style="font-size: 0.7rem; width: 36px; padding: 0.15rem 0.25rem; background: #222; color: #fff; border: 1px solid #444; border-radius: 3px; text-align: center;">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.25rem;">
+                            <span style="font-size: 0.65rem; color: var(--text-muted); white-space: nowrap;">CC #:</span>
+                            <input type="number" id="midi-cc-${traj.id}" value="${cc}" min="0" max="127" style="font-size: 0.7rem; width: 36px; padding: 0.15rem 0.25rem; background: #222; color: #fff; border: 1px solid #444; border-radius: 3px; text-align: center;">
+                        </div>
+                    </div>
+                    
+                    <!-- Right Section: Save and Delete Buttons -->
+                    <div style="display: flex; align-items: center; gap: 0.35rem;">
+                        <button class="btn btn-success" style="padding: 0.2rem 0.4rem; font-size: 0.65rem; border-radius: 3px;" onclick="saveTrajectoryMidiParams('${traj.id}')">Save</button>
+                        <button class="btn btn-danger" style="padding: 0.2rem 0.4rem; font-size: 0.65rem; border-radius: 3px;" onclick="deleteTrajectoryExample('${traj.id}')">✕</button>
+                    </div>
                 </div>`;
         });
         el.trajectoryExamplesList.innerHTML = html;
@@ -1015,6 +1020,36 @@ async function refreshTrajectoriesList() {
         console.error("Error listing trajectories:", err);
     }
 }
+
+window.saveTrajectoryMidiParams = async function(trajId) {
+    const type = 'cc';
+    const channel = parseInt(document.getElementById(`midi-chan-${trajId}`).value) || 1;
+    const cc = parseInt(document.getElementById(`midi-cc-${trajId}`).value) || 22;
+    const note = 60;
+    
+    try {
+        const res = await fetch(`/api/trajectories/${trajId}/midi`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                midi_channel: channel,
+                midi_cc: cc,
+                midi_note: note,
+                midi_type: type
+            })
+        });
+        if (res.ok) {
+            showError(null);
+            alert("MIDI parameters saved successfully!");
+            await refreshTrajectoriesList();
+        } else {
+            const errData = await res.json();
+            showError("Failed to save trajectory MIDI parameters: " + errData.detail);
+        }
+    } catch (err) {
+        showError("Save MIDI parameters error: " + err.message);
+    }
+};
 
 async function deleteTrajectoryExample(trajId) {
     if (!confirm("Delete this trajectory template example?")) return;
@@ -1031,12 +1066,68 @@ async function deleteTrajectoryExample(trajId) {
 // --- EVENT LISTENERS SETUP ---
 
 function setupEventListeners() {
+    // Session JSON File Export Trigger
+    el.btnExportSession.addEventListener('click', () => {
+        gatherConfigFromUI();
+        const rawJsonString = JSON.stringify(currentConfig, null, 2);
+        
+        // Generate virtual trigger download file
+        const blob = new Blob([rawJsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        const customName = el.sessionFilename.value.trim() || "motion_router_session";
+        a.href = url;
+        a.download = `${customName}.json`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Cleanup download DOM structures
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        console.log("Successfully exported active session parameters as:", customName);
+    });
+
+    // Session JSON File Import Reader
+    el.importFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const importedData = JSON.parse(e.target.result);
+                
+                // Confirm valid JSON configuration attributes
+                if (typeof importedData !== 'object' || !importedData.osc_input || !importedData.routes) {
+                    throw new Error("Invalid Session config file structure. Essential keys are missing.");
+                }
+
+                currentConfig = importedData;
+                
+                // Synchronize LocalStorage and active server config state
+                localStorage.setItem('osc_motion_router_persisted_config', JSON.stringify(currentConfig));
+                populateUIFromConfig();
+                await pushConfigToServer(currentConfig);
+                
+                alert("Session Config successfully loaded and imported!");
+                showError(null);
+            } catch (err) {
+                alert("Failed to import configuration: " + err.message);
+            }
+        };
+        reader.readAsText(file);
+        
+        // Reset input field value
+        el.importFileInput.value = '';
+    });
+
     // Save-on-edit input forms
     const autoSaveInputs = [
         el.oscBindIp, el.oscPort, el.oscAccelAddress, el.oscGyroAddress, el.oscFormat,
         el.oscAccelIndexes, el.oscGyroIndexes,
-        el.midiGlobalPort, el.midiGlobalChannel, el.trajThreshold, el.trajActionType,
-        el.trajActionOscHost, el.trajActionOscPort, el.trajActionOscAddr, el.trajActionMidiPort,
+        el.midiGlobalPort, el.midiGlobalChannel, el.trajThreshold, el.trajDeviationThreshold, el.trajRecognitionHold, el.trajActionType,
+        el.trajActionOscHost, el.trajActionOscPort, el.trajActionOscAddr,
         el.trajActionMidiChan, el.trajActionMidiCc
     ];
     autoSaveInputs.forEach(input => {
@@ -1194,49 +1285,10 @@ function setupEventListeners() {
         }
     });
 
-    // Record Action
-    el.btnStartRecord.addEventListener('click', async () => {
-        const name = el.recordName.value.trim() || "Session";
-        try {
-            const res = await fetch('/api/record/start', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name })
-            });
-            if (res.ok) {
-                el.btnStartRecord.style.display = 'none';
-                el.btnStopRecord.style.display = 'inline-flex';
-                showError(null);
-            }
-        } catch (err) {
-            showError("Failed to start recording: " + err.message);
-        }
-    });
+    // Status bar stop replay on click (removed)
 
-    el.btnStopRecord.addEventListener('click', async () => {
-        try {
-            const res = await fetch('/api/record/stop', { method: 'POST' });
-            if (res.ok) {
-                el.btnStartRecord.style.display = 'inline-flex';
-                el.btnStopRecord.style.display = 'none';
-                showError(null);
-                await refreshRecordingsList();
-            } else {
-                const errData = await res.json();
-                showError("Failed to save recording: " + errData.detail);
-            }
-        } catch (err) {
-            showError("Failed to stop recording: " + err.message);
-        }
-    });
-
-    // Status bar stop replay on click
-    el.replayStatusIndicator.parentElement.addEventListener('click', async () => {
-        await stopReplay();
-    });
-
-    // Trajectory Template record example
-    el.btnTrajRecordExample.addEventListener('click', async () => {
+    // Trajectory Template record example (Start)
+    el.btnTrajRecordStart.addEventListener('click', async () => {
         const label = el.trajLabel.value.trim();
         if (!label) {
             alert("Please provide a name/label for the gesture first.");
@@ -1255,25 +1307,26 @@ function setupEventListeners() {
             return;
         }
 
-        const duration = parseFloat(el.trajDuration.value) || 3.0;
-
         try {
             // Ensure config is up to date first
             await saveConfigImmediate();
             
-            const res = await fetch('/api/trajectories/record', {
+            const res = await fetch('/api/trajectories/record/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     label: label,
-                    duration: duration,
-                    channels: checkedChannels
+                    channels: checkedChannels,
+                    midi_channel: parseInt(el.trajMidiChan.value) || 1,
+                    midi_cc: parseInt(el.trajMidiCc.value) || 22
                 })
             });
             if (res.ok) {
                 showError(null);
-                // Wait for the duration + 3s countdown to be completed, then refresh trajectories
-                setTimeout(refreshTrajectoriesList, (duration + 4) * 1000);
+                // Immediately query and update status
+                const resSt = await fetch('/api/trajectories/status');
+                const st = await resSt.json();
+                updateTrajectoryStatusUI(st);
             } else {
                 const errData = await res.json();
                 showError("Trajectory template recording failed: " + errData.detail);
@@ -1283,8 +1336,31 @@ function setupEventListeners() {
         }
     });
 
-    // Trajectory Capture & Recognize
-    el.btnTrajRecognize.addEventListener('click', async () => {
+    // Trajectory Template record example (Stop & Save)
+    el.btnTrajRecordStop.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/trajectories/record/stop', {
+                method: 'POST'
+            });
+            if (res.ok) {
+                showError(null);
+                // Immediately refresh saved templates list
+                await refreshTrajectoriesList();
+                // Query and update status
+                const resSt = await fetch('/api/trajectories/status');
+                const st = await resSt.json();
+                updateTrajectoryStatusUI(st);
+            } else {
+                const errData = await res.json();
+                showError("Stopping trajectory template recording failed: " + errData.detail);
+            }
+        } catch (err) {
+            showError("Trajectory stop record error: " + err.message);
+        }
+    });
+
+    // Trajectory Continuous Recognition Start
+    el.btnTrajRecognizeStart.addEventListener('click', async () => {
         const checkedChannels = [];
         const checks = document.querySelectorAll('.traj-channel-check');
         checks.forEach(c => {
@@ -1296,13 +1372,13 @@ function setupEventListeners() {
             return;
         }
 
-        const duration = parseFloat(el.trajDuration.value) || 3.0;
+        const duration = 3.0; // Fixed default continuous comparison window (seconds)
 
         try {
             // Save settings first
             await saveConfigImmediate();
             
-            const res = await fetch('/api/trajectories/recognize', {
+            const res = await fetch('/api/trajectories/recognize/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1312,18 +1388,54 @@ function setupEventListeners() {
             });
             if (res.ok) {
                 showError(null);
-                // Wait for duration to finish then query
-                setTimeout(async () => {
-                    const resSt = await fetch('/api/trajectories/status');
-                    const st = await resSt.json();
-                    updateTrajectoryStatusUI(st);
-                }, (duration + 1) * 1000);
+                const resSt = await fetch('/api/trajectories/status');
+                const st = await resSt.json();
+                updateTrajectoryStatusUI(st);
             } else {
                 const errData = await res.json();
-                showError("Trajectory capture failed: " + errData.detail);
+                showError("Trajectory continuous recognition failed: " + errData.detail);
             }
         } catch (err) {
-            showError("Trajectory capture error: " + err.message);
+            showError("Trajectory recognition start error: " + err.message);
+        }
+    });
+
+    // Trajectory Continuous Recognition Stop
+    el.btnTrajRecognizeStop.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/trajectories/recognize/stop', {
+                method: 'POST'
+            });
+            if (res.ok) {
+                showError(null);
+                const resSt = await fetch('/api/trajectories/status');
+                const st = await resSt.json();
+                updateTrajectoryStatusUI(st);
+            } else {
+                const errData = await res.json();
+                showError("Stopping trajectory recognition failed: " + errData.detail);
+            }
+        } catch (err) {
+            showError("Trajectory recognition stop error: " + err.message);
+        }
+    });
+
+    // Set Idle Position click event
+    el.btnSetIdlePos.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/trajectories/idle', {
+                method: 'POST'
+            });
+            if (res.ok) {
+                const data = await res.json();
+                alert("Idle position offset stored successfully!");
+                console.log("Idle offsets configured to:", data.idle_offsets);
+            } else {
+                const errData = await res.json();
+                showError("Failed to store idle position: " + errData.detail);
+            }
+        } catch (err) {
+            showError("Store idle position error: " + err.message);
         }
     });
 }

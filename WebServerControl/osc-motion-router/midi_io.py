@@ -1,5 +1,6 @@
 import sys
 import threading
+import time
 from typing import List, Dict, Any, Optional
 import mido
 
@@ -74,6 +75,34 @@ class MIDIManager:
                     except Exception:
                         pass
                     del self.open_ports[port_name]
+            return False
+
+    def send_note_on_off(self, port_name: str, channel: int, note: int, velocity: int = 127, duration_sec: float = 0.1) -> bool:
+        """
+        Sends a MIDI Note On and then Note Off (after a short delay or synchronously)
+        to the specified port.
+        """
+        port = self._get_or_open_port(port_name)
+        if not port:
+            return False
+        try:
+            mido_channel = max(0, min(15, channel - 1))
+            msg_on = mido.Message('note_on', channel=mido_channel, note=note, velocity=velocity)
+            port.send(msg_on)
+            
+            # Send note_off asynchronously to avoid blocking the main stream
+            def send_off():
+                time.sleep(duration_sec)
+                try:
+                    msg_off = mido.Message('note_off', channel=mido_channel, note=note, velocity=0)
+                    port.send(msg_off)
+                except Exception:
+                    pass
+            threading.Thread(target=send_off, daemon=True).start()
+            return True
+        except Exception as e:
+            self.last_error = f"Error sending Note On to '{port_name}': {e}"
+            print(self.last_error, file=sys.stderr)
             return False
 
     def close_all(self):

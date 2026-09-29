@@ -11,11 +11,14 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "bind_ip": "0.0.0.0",
         "port": 9000,
-        "accel_address": "/sensor/accel",
-        "gyro_address": "/sensor/gyro",
+            "accel_address": "/tracker",
+            "gyro_address": "/tracker",
         "format": "grouped",
-        "accel_indexes": [0, 1, 2],
-        "gyro_indexes": [0, 1, 2]
+            # Arduino `/tracker` message layout from ESP32 firmware:
+            # [qx, qy, qz, qw, ax, ay, az, gx, gy, gz]
+            # therefore accel values are indices 4,5,6 and gyro 7,8,9
+            "accel_indexes": [4, 5, 6],
+            "gyro_indexes": [7, 8, 9]
     },
     "osc_outputs": [
         {
@@ -28,6 +31,17 @@ DEFAULT_CONFIG = {
     "midi": {
         "port_name": "",
         "channel": 1
+    },
+    "trajectory": {
+        "recognition_threshold": 15.0,
+        "deviation_threshold": 0.035,
+        "recognition_hold": 1.0,
+        "action": {
+            "type": "osc",
+            "host": "127.0.0.1",
+            "port": 9001,
+            "address": "/motion/recognized"
+        }
     },
     "routes": []
 }

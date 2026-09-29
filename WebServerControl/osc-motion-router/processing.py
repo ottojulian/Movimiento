@@ -118,6 +118,9 @@ class RouteProcessor:
                 # Check if changed
                 if rt.last_sent_value is None or rt.last_sent_value != int_val:
                     port_name = output_config.get("port_name", "")
+                    if not port_name:
+                        from config import config_manager
+                        port_name = config_manager.get("midi", {}).get("port_name", "")
                     channel = output_config.get("channel", 1)
                     cc = output_config.get("cc", 0)
                     

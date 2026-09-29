@@ -21,10 +21,7 @@
                 <span id="midi-status-indicator" class="indicator stopped"></span>
                 <span>MIDI Port: <strong id="midi-status-text">Inactive</strong></span>
             </div>
-            <div class="status-item">
-                <span id="replay-status-indicator" class="indicator"></span>
-                <span id="replay-status-text">Replay: Idle</span>
-            </div>
+
             <div class="status-item" style="color: var(--text-muted);">
                 <span>Rate: <strong id="global-rate-text">0</strong> msg/s</span>
             </div>
@@ -33,7 +30,253 @@
 
     <div id="error-banner" class="error-banner"></div>
 
+    <!-- Session Persistence Control Bar -->
+    <section class="card" style="margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1.25rem;">
+        <!-- Left Side: Session File Controls -->
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <strong style="color: var(--accent); font-size: 0.9rem;">💾 Session File Controls</strong>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">| Export or import active configurations</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <input type="text" id="session-filename" value="motion_router_session" placeholder="Session Name" style="width: 180px; padding: 0.35rem 0.6rem; font-size: 0.8rem; background-color: #1a1a1e; margin-bottom: 0;">
+                <button id="btn-export-session" class="btn btn-sm btn-primary">Export Session</button>
+                <button id="btn-trigger-import" class="btn btn-sm" onclick="document.getElementById('import-file-input').click()">Import Session</button>
+                <input type="file" id="import-file-input" accept=".json" style="display: none;">
+            </div>
+        </div>
+        <!-- Middle Side: Mini Accel & Gyro charts -->
+        <div style="display: flex; align-items: center; gap: 1rem; flex-grow: 1; justify-content: center;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: bold; font-family: sans-serif;">Accel</span>
+                <canvas id="mini-accel-plot" style="width: 100px; height: 32px; background-color: #111115; border: 1px solid var(--border); border-radius: 4px; display: block;"></canvas>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; font-weight: bold; font-family: sans-serif;">Gyro</span>
+                <canvas id="mini-gyro-plot" style="width: 100px; height: 32px; background-color: #111115; border: 1px solid var(--border); border-radius: 4px; display: block;"></canvas>
+            </div>
+        </div>
+        <!-- Right Side: General MIDI Port Dropdown -->
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <label for="midi-global-port" style="font-size: 0.85rem; color: var(--text); font-weight: 600; white-space: nowrap; margin-bottom: 0;">General MIDI Port:</label>
+            <select id="midi-global-port" style="padding: 0.35rem 0.6rem; font-size: 0.8rem; background-color: #1a1a1e; border: 1px solid var(--border); border-radius: 4px; color: var(--text); width: 220px; margin-bottom: 0;">
+                <option value="">No MIDI ports available</option>
+            </select>
+        </div>
+    </section>
+
     <main class="dashboard-grid">
+        <!-- FIRST ROW: Gesture Recognition & Signal Routing (Side by Side) -->
+        <!-- Trajectories & Pattern Recognition (Gesture Recognition) -->
+        <section class="card col-6">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="margin-bottom: 0;">Gesture Recognition</h2>
+                <button id="btn-set-idle-pos" class="btn btn-sm btn-primary" style="padding: 0.3rem 0.6rem; font-size: 0.75rem;">Set Idle Pos</button>
+            </div>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Record distinct motion gestures with continuous start/stop control, and classify them in real-time to trigger custom OSC or MIDI actions.</p>
+            
+            <div class="form-row-3">
+                <div class="form-group">
+                    <label for="traj-label">Gesture Label</label>
+                    <input type="text" id="traj-label" placeholder="e.g. circle_arm">
+                </div>
+                <div class="form-group">
+                    <label for="traj-midi-chan">Trigger MIDI Ch</label>
+                    <input type="number" id="traj-midi-chan" min="1" max="16" value="1">
+                </div>
+                <div class="form-group">
+                    <label for="traj-midi-cc">Trigger MIDI CC#</label>
+                    <input type="number" id="traj-midi-cc" min="0" max="127" value="22">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Select Signal Channels for Comparison</label>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.25rem;">
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.x" checked> Accel X</label>
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.y" checked> Accel Y</label>
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.z" checked> Accel Z</label>
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.x"> Gyro X</label>
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.y"> Gyro Y</label>
+                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.z"> Gyro Z</label>
+                </div>
+            </div>
+
+            <div class="flex-btn-group" style="gap: 0.5rem;">
+                <button id="btn-traj-record-start" class="btn btn-primary" style="flex: 1;">Start Recording Template</button>
+                <button id="btn-traj-record-stop" class="btn btn-danger" style="flex: 1; display: none;">Stop & Save Template</button>
+                <button id="btn-traj-recognize-start" class="btn btn-success" style="flex: 1;">Start Recognition</button>
+                <button id="btn-traj-recognize-stop" class="btn btn-danger" style="flex: 1; display: none;">Stop Recognition</button>
+            </div>
+
+            <div id="traj-progress-card" style="display: none; background-color: #242429; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; margin-top: 1rem;">
+                <p id="traj-progress-text" style="font-weight: 600; text-align: center; font-size: 0.9rem;"></p>
+            </div>
+
+            <div style="margin-top: 1.25rem;">
+                <h3 style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Saved Templates</h3>
+                <div id="trajectory-examples-list" class="trajectory-list" style="max-height: 250px; margin-bottom: 1.25rem;">
+                    <!-- Templates load here -->
+                </div>
+            </div>
+            
+            <div>
+                <h3 style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Recognition Output</h3>
+                <div id="recognition-match-container" style="background-color: #0b0b0c; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; height: 80px; display: flex; flex-direction: column; justify-content: center; align-items: center; transition: background-color 0.15s ease;">
+                    <div id="recognition-match-label" style="font-size: 1.25rem; font-weight: 700; color: var(--success); text-align: center;">No gesture matched</div>
+                    <div id="recognition-match-dist" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Distance: --</div>
+                </div>
+            </div>
+            
+            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+                <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Trajectory recognition settings & action</h4>
+                <div class="form-row" style="margin-bottom: 0.75rem;">
+                    <div class="form-group">
+                        <label for="traj-threshold">Recognition Threshold (Max Dist)</label>
+                        <input type="number" id="traj-threshold" value="15.0">
+                    </div>
+                    <div class="form-group">
+                        <label for="traj-deviation-threshold">Motion Deviation Threshold</label>
+                        <input type="number" id="traj-deviation-threshold" step="0.005" min="0" value="0.035" title="Filters false triggers when static. Lower is more sensitive, higher is less sensitive.">
+                    </div>
+                </div>
+                <div class="form-row" style="margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <label for="traj-recognition-hold">Recognition Hold Delay (sec)</label>
+                        <input type="number" id="traj-recognition-hold" step="0.1" min="0" value="1.0" title="Prevents identifying subsequent gestures for this duration after a successful detection.">
+                    </div>
+                    <div class="form-group">
+                        <label for="traj-action-type">Trigger Action Type</label>
+                        <select id="traj-action-type">
+                            <option value="osc">Send OSC Message</option>
+                            <option value="midi">Send MIDI CC</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div id="traj-action-osc-group" class="form-row-3">
+                    <div class="form-group">
+                        <label for="traj-action-osc-host">Host IP</label>
+                        <input type="text" id="traj-action-osc-host" value="127.0.0.1">
+                    </div>
+                    <div class="form-group">
+                        <label for="traj-action-osc-port">Port</label>
+                        <input type="number" id="traj-action-osc-port" value="9001">
+                    </div>
+                    <div class="form-group">
+                        <label for="traj-action-osc-addr">Address</label>
+                        <input type="text" id="traj-action-osc-addr" value="/motion/recognized">
+                    </div>
+                </div>
+
+                <div id="traj-action-midi-group" class="form-row" style="display: none;">
+                    <div class="form-group">
+                        <label for="traj-action-midi-chan">Channel</label>
+                        <input type="number" id="traj-action-midi-chan" min="1" max="16" value="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="traj-action-midi-cc">CC Num</label>
+                        <input type="number" id="traj-action-midi-cc" min="0" max="127" value="22">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Signal Routing Panel -->
+        <section class="card col-6">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+                <h2>Signal Routing</h2>
+                <button id="btn-new-route" class="btn btn-primary btn-sm">+ Add New Route</button>
+            </div>
+            
+            <div id="routes-container" class="routes-list">
+                <!-- Routes will load dynamically here -->
+            </div>
+
+            <!-- Route Builder Form (Initially Hidden) -->
+            <div id="route-editor" class="card" style="background-color: #242429; display: none; margin-top: 1.5rem; border: 1px dashed var(--accent);">
+                <h3 id="editor-title" style="font-size: 1rem; margin-bottom: 1rem;">Add New Signal Route</h3>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="route-name">Route Name</label>
+                        <input type="text" id="route-name" placeholder="e.g. Accel X to CC21">
+                    </div>
+                    <div class="form-group">
+                        <label for="route-source">Source Signal</label>
+                        <select id="route-source">
+                            <option value="accel.x">Accelerometer X (accel.x)</option>
+                            <option value="accel.y">Accelerometer Y (accel.y)</option>
+                            <option value="accel.z">Accelerometer Z (accel.z)</option>
+                            <option value="accel.magnitude">Accelerometer Magnitude (accel.magnitude)</option>
+                            <option value="gyro.x">Gyroscope X (gyro.x)</option>
+                            <option value="gyro.y">Gyroscope Y (gyro.y)</option>
+                            <option value="gyro.z">Gyroscope Z (gyro.z)</option>
+                            <option value="gyro.magnitude">Gyroscope Magnitude (gyro.magnitude)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Processors chain builder -->
+                <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                        <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase;">Processors Chain</h4>
+                        <button id="btn-add-processor" class="btn btn-sm btn-primary">+ Add Processor</button>
+                    </div>
+                    <div id="processors-list-editor" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                        <!-- Dynamically added processor blocks -->
+                    </div>
+                </div>
+
+                <!-- Output destination configuration -->
+                <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+                    <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.75rem;">Output Destination</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="route-out-type">Output Type</label>
+                            <select id="route-out-type">
+                                <option value="midi_cc">MIDI CC</option>
+                                <option value="osc">OSC (Outgoings)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- MIDI CC output block -->
+                    <div id="out-group-midi" class="form-row">
+                        <div class="form-group">
+                            <label for="route-midi-chan">Channel (1-16)</label>
+                            <input type="number" id="route-midi-chan" min="1" max="16" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="route-midi-cc">CC Number (0-127)</label>
+                            <input type="number" id="route-midi-cc" min="0" max="127" value="21">
+                        </div>
+                    </div>
+
+                    <!-- OSC output block -->
+                    <div id="out-group-osc" class="form-row-3" style="display: none;">
+                        <div class="form-group">
+                            <label for="route-osc-host">Host IP</label>
+                            <input type="text" id="route-osc-host" value="127.0.0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="route-osc-port">Port</label>
+                            <input type="number" id="route-osc-port" value="9001">
+                        </div>
+                        <div class="form-group">
+                            <label for="route-osc-addr">Address</label>
+                            <input type="text" id="route-osc-addr" value="/motion/out">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex-btn-group" style="justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+                    <button id="btn-cancel-route" class="btn btn-sm">Cancel</button>
+                    <button id="btn-save-route" class="btn btn-sm btn-success">Save Route</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECOND ROW: Live Signals & Plots (col-8) next to OSC Input Settings & Monitor (col-4) -->
         <!-- Live Signals & Plots -->
         <section class="card col-8">
             <h2>Live Signals & Plots</h2>
@@ -74,6 +317,54 @@
                     <canvas id="gyro-plot"></canvas>
                 </div>
             </div>
+
+            <!-- Nested MIDI Settings & Manual Test Panel -->
+            <div style="border-top: 1px solid var(--border); padding-top: 1.25rem; margin-top: 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                
+                <!-- Left Column: MIDI Configuration & Test -->
+                <div>
+                    <h3 style="font-size: 1rem; color: var(--text); margin-bottom: 0.75rem;">MIDI Settings & Test</h3>
+                    <div class="form-row" style="margin-bottom: 0.75rem; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="midi-global-channel" style="font-size: 0.75rem;">Global Ch</label>
+                            <input type="number" id="midi-global-channel" min="1" max="16" value="1" style="padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="midi-test-cc" style="font-size: 0.75rem;">Test CC Num</label>
+                            <input type="number" id="midi-test-cc" min="0" max="127" value="21" style="padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" style="margin-bottom: 0.75rem;">
+                        <label for="midi-test-value" style="font-size: 0.75rem; display: inline-block;">CC Value: <strong id="midi-test-value-display" style="color: var(--accent);">64</strong></label>
+                        <input type="range" id="midi-test-value" min="0" max="127" value="64" style="padding: 0; height: 1.25rem; margin-top: 0.25rem;">
+                    </div>
+                    <button id="btn-send-midi-test" class="btn btn-sm btn-primary" style="width: 100%; padding: 0.4rem;">Send CC Test</button>
+                </div>
+
+                <!-- Right Column: Manual OSC Sender Test -->
+                <div style="border-left: 1px dashed var(--border); padding-left: 1.5rem;">
+                    <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text);">Manual OSC Send Test</h3>
+                    <div class="form-row-3" style="margin-bottom: 0.75rem; gap: 0.5rem;">
+                        <div class="form-group">
+                            <label for="osc-test-port" style="font-size: 0.75rem;">Test Port</label>
+                            <input type="number" id="osc-test-port" value="9001" style="padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label for="osc-test-address" style="font-size: 0.75rem;">OSC Address</label>
+                            <input type="text" id="osc-test-address" value="/test/signal" style="padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+                        </div>
+                    </div>
+                    <div class="form-row" style="margin-bottom: 0.75rem; grid-template-columns: 1fr; gap: 0.5rem;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="osc-test-value" style="font-size: 0.75rem;">Float Value</label>
+                            <input type="number" id="osc-test-value" step="0.01" value="1.0" style="padding: 0.35rem 0.5rem; font-size: 0.8rem;">
+                        </div>
+                    </div>
+                    <button id="btn-send-osc-test" class="btn btn-sm btn-primary" style="width: 100%; padding: 0.4rem;">Send OSC Test</button>
+                </div>
+            </div>
+        </section>
         </section>
 
         <!-- OSC Input Settings & Monitor -->
@@ -147,293 +438,6 @@
                     <div class="flex-btn-group">
                         <button id="btn-learn-accel" class="btn btn-sm btn-primary" style="flex: 1;">Use as Accel Address</button>
                         <button id="btn-learn-gyro" class="btn btn-sm btn-primary" style="flex: 1;">Use as Gyro Address</button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Signal Routing Panel -->
-        <section class="card col-8">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-                <h2>Signal Routing</h2>
-                <button id="btn-new-route" class="btn btn-primary btn-sm">+ Add New Route</button>
-            </div>
-            
-            <div id="routes-container" class="routes-list">
-                <!-- Routes will load dynamically here -->
-            </div>
-
-            <!-- Route Builder Form (Initially Hidden) -->
-            <div id="route-editor" class="card" style="background-color: #242429; display: none; margin-top: 1.5rem; border: 1px dashed var(--accent);">
-                <h3 id="editor-title" style="font-size: 1rem; margin-bottom: 1rem;">Add New Signal Route</h3>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="route-name">Route Name</label>
-                        <input type="text" id="route-name" placeholder="e.g. Accel X to CC21">
-                    </div>
-                    <div class="form-group">
-                        <label for="route-source">Source Signal</label>
-                        <select id="route-source">
-                            <option value="accel.x">Accelerometer X (accel.x)</option>
-                            <option value="accel.y">Accelerometer Y (accel.y)</option>
-                            <option value="accel.z">Accelerometer Z (accel.z)</option>
-                            <option value="accel.magnitude">Accelerometer Magnitude (accel.magnitude)</option>
-                            <option value="gyro.x">Gyroscope X (gyro.x)</option>
-                            <option value="gyro.y">Gyroscope Y (gyro.y)</option>
-                            <option value="gyro.z">Gyroscope Z (gyro.z)</option>
-                            <option value="gyro.magnitude">Gyroscope Magnitude (gyro.magnitude)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Processors chain builder -->
-                <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                        <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase;">Processors Chain</h4>
-                        <button id="btn-add-processor" class="btn btn-sm btn-primary">+ Add Processor</button>
-                    </div>
-                    <div id="processors-list-editor" style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
-                        <!-- Dynamically added processor blocks -->
-                    </div>
-                </div>
-
-                <!-- Output destination configuration -->
-                <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-                    <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.75rem;">Output Destination</h4>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="route-out-type">Output Type</label>
-                            <select id="route-out-type">
-                                <option value="midi_cc">MIDI CC</option>
-                                <option value="osc">OSC (Outgoings)</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <!-- MIDI CC output block -->
-                    <div id="out-group-midi" class="form-row-3">
-                        <div class="form-group">
-                            <label for="route-midi-port">MIDI Port</label>
-                            <select id="route-midi-port">
-                                <option value="">Default (Global Port)</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="route-midi-chan">Channel (1-16)</label>
-                            <input type="number" id="route-midi-chan" min="1" max="16" value="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="route-midi-cc">CC Number (0-127)</label>
-                            <input type="number" id="route-midi-cc" min="0" max="127" value="21">
-                        </div>
-                    </div>
-
-                    <!-- OSC output block -->
-                    <div id="out-group-osc" class="form-row-3" style="display: none;">
-                        <div class="form-group">
-                            <label for="route-osc-host">Host IP</label>
-                            <input type="text" id="route-osc-host" value="127.0.0.1">
-                        </div>
-                        <div class="form-group">
-                            <label for="route-osc-port">Port</label>
-                            <input type="number" id="route-osc-port" value="9001">
-                        </div>
-                        <div class="form-group">
-                            <label for="route-osc-addr">Address</label>
-                            <input type="text" id="route-osc-addr" value="/motion/out">
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex-btn-group" style="justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-                    <button id="btn-cancel-route" class="btn btn-sm">Cancel</button>
-                    <button id="btn-save-route" class="btn btn-sm btn-success">Save Route</button>
-                </div>
-            </div>
-        </section>
-
-        <!-- MIDI Global Test CC -->
-        <section class="card col-4">
-            <h2>MIDI Settings & Test</h2>
-            <div class="form-group">
-                <label for="midi-global-port">Selected Global MIDI Port</label>
-                <select id="midi-global-port">
-                    <option value="">No MIDI ports available</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="midi-global-channel">MIDI Channel</label>
-                <input type="number" id="midi-global-channel" min="1" max="16" value="1">
-            </div>
-            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-                <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text);">Manual CC Send</h3>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="midi-test-cc">CC Number</label>
-                        <input type="number" id="midi-test-cc" min="0" max="127" value="21">
-                    </div>
-                    <div class="form-group">
-                        <label for="midi-test-value">CC Value (<span id="midi-test-value-display">64</span>)</label>
-                        <input type="range" id="midi-test-value" min="0" max="127" value="64">
-                    </div>
-                </div>
-                <button id="btn-send-midi-test" class="btn btn-sm btn-primary" style="width: 100%;">Send MIDI CC Test</button>
-            </div>
-
-            <!-- OSC Sender Test -->
-            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1.5rem;">
-                <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text);">Manual OSC Send Test</h3>
-                <div class="form-row-3">
-                    <div class="form-group">
-                        <label for="osc-test-port">Port</label>
-                        <input type="number" id="osc-test-port" value="9001">
-                    </div>
-                    <div class="form-group">
-                        <label for="osc-test-address">Address</label>
-                        <input type="text" id="osc-test-address" value="/test/signal">
-                    </div>
-                    <div class="form-group">
-                        <label for="osc-test-value">Val</label>
-                        <input type="number" id="osc-test-value" step="0.01" value="1.0">
-                    </div>
-                </div>
-                <button id="btn-send-osc-test" class="btn btn-sm btn-primary" style="width: 100%;">Send OSC Test</button>
-            </div>
-        </section>
-
-        <!-- Recording & Playback -->
-        <section class="card col-6">
-            <h2>Record & Replay Sessions</h2>
-            <div class="form-row" style="align-items: flex-end;">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <label for="record-name">Recording Name</label>
-                    <input type="text" id="record-name" placeholder="e.g. Session_Calm">
-                </div>
-                <div class="flex-btn-group" style="margin-top: 0;">
-                    <button id="btn-start-record" class="btn btn-success" style="flex: 1;">Start Record</button>
-                    <button id="btn-stop-record" class="btn btn-danger" style="flex: 1; display: none;">Stop Record</button>
-                </div>
-            </div>
-            
-            <div style="margin-top: 1.5rem;">
-                <h3 style="font-size: 0.95rem; margin-bottom: 0.75rem; color: var(--text);">Saved Sessions List</h3>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th style="width: 45%;">Name</th>
-                                <th style="width: 25%;">Duration</th>
-                                <th style="width: 30%;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="recordings-table-body">
-                            <tr>
-                                <td colspan="3" style="text-align: center; color: var(--text-muted); font-style: italic; padding: 1rem;">No recordings saved yet.</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
-
-        <!-- Trajectories & Pattern Recognition -->
-        <section class="card col-6">
-            <h2>Trajectory MVP Experiment</h2>
-            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Record motion gestures and compare them in real-time to trigger custom OSC or MIDI actions.</p>
-            
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="traj-label">Gesture Label</label>
-                    <input type="text" id="traj-label" placeholder="e.g. circle_arm">
-                </div>
-                <div class="form-group">
-                    <label for="traj-duration">Capture Duration (sec)</label>
-                    <input type="number" id="traj-duration" step="0.5" value="3.0">
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>Select Signal Channels for Comparison</label>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-top: 0.25rem;">
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.x" checked> Accel X</label>
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.y" checked> Accel Y</label>
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="accel.z" checked> Accel Z</label>
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.x"> Gyro X</label>
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.y"> Gyro Y</label>
-                    <label class="checkbox-label"><input type="checkbox" class="traj-channel-check" value="gyro.z"> Gyro Z</label>
-                </div>
-            </div>
-
-            <div class="flex-btn-group">
-                <button id="btn-traj-record-example" class="btn btn-primary" style="flex: 1;">Record Template Example</button>
-                <button id="btn-traj-recognize" class="btn btn-success" style="flex: 1;">Capture & Recognize</button>
-            </div>
-
-            <div id="traj-progress-card" style="display: none; background-color: #242429; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; margin-top: 1rem;">
-                <p id="traj-progress-text" style="font-weight: 600; text-align: center; font-size: 0.9rem;"></p>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.25rem;">
-                <div>
-                    <h3 style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Saved Templates</h3>
-                    <div id="trajectory-examples-list" class="trajectory-list">
-                        <!-- Templates load here -->
-                    </div>
-                </div>
-                <div>
-                    <h3 style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase;">Recognition Output</h3>
-                    <div style="background-color: #0b0b0c; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; height: 110px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                        <div id="recognition-match-label" style="font-size: 1.25rem; font-weight: 700; color: var(--success); text-align: center;">No gesture matched</div>
-                        <div id="recognition-match-dist" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Distance: --</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
-                <h4 style="font-size: 0.875rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.5rem;">Trajectory recognition settings & action</h4>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="traj-threshold">Recognition Threshold (Max Dist)</label>
-                        <input type="number" id="traj-threshold" value="15.0">
-                    </div>
-                    <div class="form-group">
-                        <label for="traj-action-type">Trigger Action Type</label>
-                        <select id="traj-action-type">
-                            <option value="osc">Send OSC Message</option>
-                            <option value="midi">Send MIDI CC</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div id="traj-action-osc-group" class="form-row-3">
-                    <div class="form-group">
-                        <label for="traj-action-osc-host">Host IP</label>
-                        <input type="text" id="traj-action-osc-host" value="127.0.0.1">
-                    </div>
-                    <div class="form-group">
-                        <label for="traj-action-osc-port">Port</label>
-                        <input type="number" id="traj-action-osc-port" value="9001">
-                    </div>
-                    <div class="form-group">
-                        <label for="traj-action-osc-addr">Address</label>
-                        <input type="text" id="traj-action-osc-addr" value="/motion/recognized">
-                    </div>
-                </div>
-
-                <div id="traj-action-midi-group" class="form-row-3" style="display: none;">
-                    <div class="form-group">
-                        <label for="traj-action-midi-port">MIDI Port</label>
-                        <select id="traj-action-midi-port">
-                            <option value="">Default (Global Port)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="traj-action-midi-chan">Channel</label>
-                        <input type="number" id="traj-action-midi-chan" min="1" max="16" value="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="traj-action-midi-cc">CC Num</label>
-                        <input type="number" id="traj-action-midi-cc" min="0" max="127" value="22">
                     </div>
                 </div>
             </div>

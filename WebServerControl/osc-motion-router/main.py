@@ -18,6 +18,7 @@ from osc_io import osc_receiver
 from midi_io import midi_manager
 from processing import route_processor
 from trajectories import trajectory_manager
+from plugin_manager import plugin_manager
 
 # Wire up the master signal handler callback
 def on_signal_update(updated_signals: List[str]):
@@ -28,6 +29,9 @@ def on_signal_update(updated_signals: List[str]):
     with osc_receiver.lock:
         sigs = dict(osc_receiver.latest_signals)
     trajectory_manager.handle_incoming_sample(sigs)
+    
+    # 3. Feed active plugins
+    plugin_manager.process_signals(sigs, updated_signals)
 
 # Register the master signal update callback
 osc_receiver.set_on_signal_update(on_signal_update)
@@ -42,6 +46,9 @@ if initial_config.get("osc_input", {}).get("enabled", True):
 
 # --- FastAPI App Setup ---
 app = FastAPI(title="OSC Motion Router API")
+
+# Initialize and load active plugins
+plugin_manager.load_and_initialize(app)
 
 @app.middleware("http")
 async def add_no_cache_headers(request: Request, call_next):
@@ -80,14 +87,21 @@ class ReplayStartModel(BaseModel):
     id: str
     loop: bool = False
 
-class TrajectoryRecordModel(BaseModel):
+class TrajectoryRecordStartModel(BaseModel):
     label: str
-    duration: float = 3.0
     channels: List[str] = ["accel.x", "accel.y", "accel.z"]
+    midi_channel: int = 1
+    midi_cc: int = 22
 
 class TrajectoryRecognizeModel(BaseModel):
     duration: float = 3.0
     channels: List[str] = ["accel.x", "accel.y", "accel.z"]
+
+class TrajectoryMidiUpdateModel(BaseModel):
+    midi_channel: int
+    midi_cc: int
+    midi_note: int
+    midi_type: str
 
 
 # --- API Endpoints ---
@@ -100,6 +114,7 @@ def shutdown_endpoint():
             print("Received remote shutdown request. Cleaning up resources...")
             osc_receiver.stop()
             trajectory_manager.stop_replay()
+            plugin_manager.shutdown()
             config_manager.save_immediate()
             midi_manager.close_all()
         except Exception as e:
@@ -258,23 +273,66 @@ def delete_trajectory(traj_id: str):
         raise HTTPException(status_code=404, detail="Trajectory example not found")
     return {"status": "success"}
 
-@app.post("/api/trajectories/record")
-def record_trajectory_example(payload: TrajectoryRecordModel):
-    success = trajectory_manager.record_trajectory_example(
-        payload.label, payload.duration, payload.channels
+@app.put("/api/trajectories/{traj_id}/midi")
+def update_trajectory_midi(traj_id: str, payload: TrajectoryMidiUpdateModel):
+    success = trajectory_manager.update_trajectory_midi_params(
+        traj_id, payload.midi_channel, payload.midi_cc, payload.midi_note, payload.midi_type
+    )
+    if not success:
+        raise HTTPException(status_code=404, detail="Trajectory example not found")
+    return {"status": "success"}
+
+@app.post("/api/trajectories/record/start")
+def record_trajectory_example_start(payload: TrajectoryRecordStartModel):
+    success = trajectory_manager.start_trajectory_example_recording(
+        payload.label, payload.channels, payload.midi_channel, payload.midi_cc
     )
     if not success:
         raise HTTPException(status_code=400, detail="Cannot start trajectory recording (another action is busy)")
-    return {"status": "success", "message": f"Trajectory countdown started for '{payload.label}'"}
+    return {"status": "success", "message": f"Trajectory template recording started for '{payload.label}'"}
 
-@app.post("/api/trajectories/recognize")
-def recognize_trajectory(payload: TrajectoryRecognizeModel):
-    success = trajectory_manager.start_trajectory_recognition_capture(
+@app.post("/api/trajectories/record/stop")
+def record_trajectory_example_stop():
+    success = trajectory_manager.stop_trajectory_example_recording()
+    if not success:
+        raise HTTPException(status_code=400, detail="Cannot stop trajectory recording (not currently recording a template)")
+    return {"status": "success", "message": "Trajectory template recording stopped and saved"}
+
+@app.post("/api/trajectories/recognize/start")
+def recognize_trajectory_start(payload: TrajectoryRecognizeModel):
+    success = trajectory_manager.start_trajectory_recognition(
         payload.duration, payload.channels
     )
     if not success:
         raise HTTPException(status_code=400, detail="Cannot start trajectory recognition (another action is busy)")
-    return {"status": "success", "message": "Trajectory capture started for recognition"}
+    return {"status": "success", "message": "Continuous trajectory recognition started"}
+
+@app.post("/api/trajectories/recognize/stop")
+def recognize_trajectory_stop():
+    success = trajectory_manager.stop_trajectory_recognition()
+    if not success:
+        raise HTTPException(status_code=400, detail="Cannot stop trajectory recognition (recognition is not currently active)")
+    return {"status": "success", "message": "Continuous trajectory recognition stopped"}
+
+@app.post("/api/trajectories/idle")
+def set_idle_trajectory():
+    # Capture current raw signals as idle offsets
+    with osc_receiver.lock:
+        raw = dict(osc_receiver.latest_signals)
+    
+    # Store in config_manager under trajectory.idle_offsets
+    traj_config = config_manager.get("trajectory", {})
+    traj_config["idle_offsets"] = {
+        "accel.x": raw.get("accel.x", 0.0),
+        "accel.y": raw.get("accel.y", 0.0),
+        "accel.z": raw.get("accel.z", 0.0),
+        "gyro.x": raw.get("gyro.x", 0.0),
+        "gyro.y": raw.get("gyro.y", 0.0),
+        "gyro.z": raw.get("gyro.z", 0.0)
+    }
+    config_manager.update_key("trajectory", traj_config)
+    config_manager.save_immediate()
+    return {"status": "success", "idle_offsets": traj_config["idle_offsets"]}
 
 @app.get("/api/trajectories/status")
 def get_trajectory_status():
@@ -288,6 +346,7 @@ def shutdown_event():
     print("Shutting down and cleaning up resources...")
     osc_receiver.stop()
     trajectory_manager.stop_replay()
+    plugin_manager.shutdown()
     config_manager.save_immediate()
     midi_manager.close_all()
 
