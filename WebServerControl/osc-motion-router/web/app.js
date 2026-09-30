@@ -761,22 +761,22 @@ function renderProcessorParams(p, idx) {
             </div>`;
     } else if (p.type === 'remap') {
         return `
-            <div class="form-row-3" style="grid-template-columns: repeat(5, 1fr); gap: 0.25rem; width: 100%;">
+            <div class="form-row-3" style="grid-template-columns: repeat(5, 1fr); gap: 0.15rem; width: 100%;">
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="font-size: 0.65rem;">In Min</label>
-                    <input type="number" step="0.1" value="${p.input_min ?? 0.0}" onchange="updateProcessorParam(${idx}, 'input_min', parseFloat(this.value))" style="padding: 0.25rem; font-size: 0.75rem;">
+                    <input type="number" step="0.1" value="${p.input_min ?? 0.0}" onchange="updateProcessorParam(${idx}, 'input_min', parseFloat(this.value))" style="padding: 0.25rem 0.15rem; font-size: 0.75rem; text-align: center;">
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="font-size: 0.65rem;">In Max</label>
-                    <input type="number" step="0.1" value="${p.input_max ?? 1.0}" onchange="updateProcessorParam(${idx}, 'input_max', parseFloat(this.value))" style="padding: 0.25rem; font-size: 0.75rem;">
+                    <input type="number" step="0.1" value="${p.input_max ?? 1.0}" onchange="updateProcessorParam(${idx}, 'input_max', parseFloat(this.value))" style="padding: 0.25rem 0.15rem; font-size: 0.75rem; text-align: center;">
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="font-size: 0.65rem;">Out Min</label>
-                    <input type="number" step="0.1" value="${p.output_min ?? 0.0}" onchange="updateProcessorParam(${idx}, 'output_min', parseFloat(this.value))" style="padding: 0.25rem; font-size: 0.75rem;">
+                    <input type="number" step="0.1" value="${p.output_min ?? 0.0}" onchange="updateProcessorParam(${idx}, 'output_min', parseFloat(this.value))" style="padding: 0.25rem 0.15rem; font-size: 0.75rem; text-align: center;">
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
                     <label style="font-size: 0.65rem;">Out Max</label>
-                    <input type="number" step="0.1" value="${p.output_max ?? 127.0}" onchange="updateProcessorParam(${idx}, 'output_max', parseFloat(this.value))" style="padding: 0.25rem; font-size: 0.75rem;">
+                    <input type="number" step="0.1" value="${p.output_max ?? 127.0}" onchange="updateProcessorParam(${idx}, 'output_max', parseFloat(this.value))" style="padding: 0.25rem 0.15rem; font-size: 0.75rem; text-align: center;">
                 </div>
                 <div class="form-group" style="margin-bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;">
                     <label style="font-size: 0.65rem; margin-bottom: 0.5rem;">Clamp</label>
@@ -975,8 +975,11 @@ async function refreshTrajectoriesList() {
             return;
         }
         
+        // Reverse array so last saved template is on top
+        const reversedTrajectories = [...data.trajectories].reverse();
+        
         let html = '';
-        data.trajectories.forEach(traj => {
+        reversedTrajectories.forEach(traj => {
             const ch = traj.midi_channel || 1;
             const cc = traj.midi_cc || 22;
             const variantsCount = (traj.vectors && traj.vectors.length) ? traj.vectors.length : 1;
