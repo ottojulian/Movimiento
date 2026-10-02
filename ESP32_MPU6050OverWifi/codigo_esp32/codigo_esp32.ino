@@ -4,14 +4,16 @@
 #include <OSCMessage.h>
 #include <WiFiUdp.h>
 #include <WiFi.h>
+
+// Preprocessor trick to access private variables of Madgwick library
+// without needing to modify the standard installed library files.
+#define private public
 #include <MadgwickAHRS.h>
+#undef private
 
 ////////////////////////////////
 // INIT VARIABLES
 ////////////////////////////////
-
-unsigned long lastUdpRestart = 0;
-const unsigned long udpRestartInterval = 15000;
 
 const int mseg_delay = 20;
 
@@ -19,8 +21,13 @@ const char* oscAddress = "/tracker";
 
 String macAddressStr = "";
 
+// Cathode LED is on pin 17. 
+// Since Anode is on 3.3V, pulling pin 17 LOW turns the LED ON.
+// Pulling pin 17 HIGH turns the LED OFF.
+const int ledPin = 27;
+
 ////////////////////////////////
-// FILTER
+// MADGWICK FILTER
 ////////////////////////////////
 
 Madgwick filter;
@@ -48,7 +55,15 @@ WifiNetwork networks[] = {
     IPAddress(10, 1, 101, 170),
     IPAddress(10, 1, 103, 254),
     IPAddress(255, 255, 252, 0),
-    IPAddress(10, 1, 101, 205)
+    IPAddress(255, 255, 255, 255) // Global Broadcast Address (Universal)
+  },
+    {
+    "pablo_truck",
+    "748159263",
+    IPAddress(192, 168, 1, 170),
+    IPAddress(192, 168, 1, 1),
+    IPAddress(255, 255, 255, 0),
+    IPAddress(255, 255, 255, 255) // Global Broadcast Address (Universal)
   }
 };
 
@@ -57,7 +72,8 @@ IPAddress gateway;
 IPAddress subnet;
 IPAddress outIp;
 
-const int networkCount = sizeof(networks) / sizeof(networks[0]);
+const int networkCount =
+  sizeof(networks) / sizeof(networks[0]);
 
 const unsigned int outPort = 9000;
 const unsigned int localPort = 8000;
@@ -88,22 +104,40 @@ bool connectToKnownWiFi() {
           networks[i].subnet
         )) {
 
-      Serial.println("ERROR: No se pudo configurar la IP estatica.");
+      Serial.println(
+        "ERROR: No se pudo configurar la IP estatica."
+      );
     }
 
     // Start WiFi connection
-    WiFi.begin(networks[i].ssid, networks[i].pass);
+    WiFi.begin(
+      networks[i].ssid,
+      networks[i].pass
+    );
 
     // Wait up to 10 seconds
     const unsigned long timeout = 10000;
     unsigned long startTime = millis();
+    unsigned long lastBlinkTime = 0;
+    bool ledState = false;
 
-    while (WiFi.status() != WL_CONNECTED &&
-           millis() - startTime < timeout) {
+    while (
+      WiFi.status() != WL_CONNECTED &&
+      millis() - startTime < timeout
+    ) {
+      // Blink while connecting: toggle every 250ms
+      unsigned long currentMillis = millis();
+      if (currentMillis - lastBlinkTime >= 250) {
+        lastBlinkTime = currentMillis;
+        ledState = !ledState;
+        digitalWrite(ledPin, ledState ? LOW : HIGH); // LOW is ON, HIGH is OFF
+      }
 
-      delay(250);
+      delay(50);
       Serial.print(".");
     }
+
+    Serial.println();
 
     Serial.println();
 
@@ -116,6 +150,7 @@ bool connectToKnownWiFi() {
       outIp    = networks[i].outIp;
 
       Serial.println("WiFi conectado!");
+
       Serial.print("SSID: ");
       Serial.println(networks[i].ssid);
 
@@ -133,6 +168,7 @@ bool connectToKnownWiFi() {
       Serial.print(":");
       Serial.println(outPort);
 
+      digitalWrite(ledPin, LOW);
       return true;
     }
 
@@ -147,6 +183,10 @@ bool connectToKnownWiFi() {
 ////////////////////////////////
 
 void setup() {
+  // Configure LED pin as output
+  pinMode(ledPin, OUTPUT);
+  // Turn LED OFF on boot (HIGH because it is a active-low/cathode-controlled LED)
+  digitalWrite(ledPin, HIGH);
 
   Serial.begin(115200);
   delay(500);
@@ -156,22 +196,36 @@ void setup() {
   Serial.println("ESP32 MPU6050 OSC TRACKER");
   Serial.println("==============================");
 
-  // WiFi
+  //////////////////////////////////
+  // WIFI
+  //////////////////////////////////
+
   WiFi.setSleep(false);
   WiFi.mode(WIFI_STA);
 
   while (!connectToKnownWiFi()) {
 
-    Serial.println("Reintentando WiFi en 2 segundos...");
+    Serial.println(
+      "Reintentando WiFi en 2 segundos..."
+    );
+
     delay(2000);
   }
 
+  //////////////////////////////////
   // UDP
+  //////////////////////////////////
+
   if (Udp.begin(localPort)) {
+
     Serial.print("UDP iniciado en puerto ");
     Serial.println(localPort);
+
   } else {
-    Serial.println("ERROR: No se pudo iniciar UDP.");
+
+    Serial.println(
+      "ERROR: No se pudo iniciar UDP."
+    );
   }
 
   macAddressStr = WiFi.macAddress();
@@ -180,28 +234,68 @@ void setup() {
   // MPU6050
   //////////////////////////////////
 
-  Serial.println("Inicializando MPU6050...");
+  Serial.println(
+    "Inicializando MPU6050..."
+  );
 
   if (!mpu.begin()) {
 
-    Serial.println("ERROR: MPU6050 no encontrado.");
+    Serial.println(
+      "ERROR: MPU6050 no encontrado."
+    );
 
+    // Blink twice repeatedly if MPU is disconnected
     while (1) {
-      delay(1000);
+      // Blink 1
+      digitalWrite(ledPin, LOW); // ON
+      delay(150);
+      digitalWrite(ledPin, HIGH); // OFF
+      delay(150);
+      
+      // Blink 2
+      digitalWrite(ledPin, LOW); // ON
+      delay(150);
+      digitalWrite(ledPin, HIGH); // OFF
+      
+      delay(1000); // Wait before repeating double-blink pattern
     }
   }
 
   Serial.println("MPU6050 OK.");
+  // Turn LED fully ON (LOW because of cathode control) to show device is ON & ready
+  digitalWrite(ledPin, LOW);
 
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+  //////////////////////////////////
+  // MPU6050 CONFIGURATION
+  //////////////////////////////////
+
+  mpu.setAccelerometerRange(
+    MPU6050_RANGE_8_G
+  );
+
+  mpu.setGyroRange(
+    MPU6050_RANGE_500_DEG
+  );
+
+  mpu.setFilterBandwidth(
+    MPU6050_BAND_21_HZ
+  );
 
   //////////////////////////////////
   // MADGWICK
   //////////////////////////////////
 
-  filter.begin(100);
+  // 20 ms = nominal 50 Hz
+  float sampleFreq =
+    1000.0f / float(mseg_delay);
+
+  filter.begin(sampleFreq);
+
+  Serial.print(
+    "Madgwick sample frequency: "
+  );
+  Serial.print(sampleFreq);
+  Serial.println(" Hz");
 
   Serial.println("Tracker listo.");
   Serial.println("==============================");
@@ -219,7 +313,9 @@ void loop() {
 
   if (WiFi.status() != WL_CONNECTED) {
 
-    Serial.println("WiFi desconectado. Reconectando...");
+    Serial.println(
+      "WiFi desconectado. Reconectando..."
+    );
 
     Udp.stop();
 
@@ -234,60 +330,69 @@ void loop() {
   // MPU6050 READ
   //////////////////////////////////
 
-  sensors_event_t a, g, temp;
+  sensors_event_t a;
+  sensors_event_t g;
+  sensors_event_t temp;
 
-  mpu.getEvent(&a, &g, &temp);
+  mpu.getEvent(
+    &a,
+    &g,
+    &temp
+  );
 
   //////////////////////////////////
-  // ANGULAR VELOCITY
+  // ACTUAL SENSOR DATA
   //////////////////////////////////
+  //
+  // These variables contain the
+  // REAL MPU6050 measurements.
+  //
+  // Accelerometer:
+  // m/s^2
+  //
+  // Gyroscope:
+  // rad/s
+  //
+
+  float ax = a.acceleration.x;
+  float ay = a.acceleration.y;
+  float az = a.acceleration.z;
 
   float gx = g.gyro.x;
   float gy = g.gyro.y;
   float gz = g.gyro.z;
 
   //////////////////////////////////
-  // ACCELERATION
+  // MADGWICK SENSOR FUSION
   //////////////////////////////////
-
-  float ax = a.acceleration.x;
-  float ay = a.acceleration.y;
-  float az = a.acceleration.z;
-
-  //////////////////////////////////
-  // TILT-BASED ORIENTATION
   //
-  // This intentionally does NOT use
-  // the Madgwick output.
-  //////////////////////////////////
+  // Fuse the REAL accelerometer and
+  // gyroscope measurements.
+  //
 
-  float roll  = atan2(ay, az);
-
-  float pitch = atan2(
-    -ax,
-    sqrt(ay * ay + az * az)
+  filter.updateIMU(
+    gx,
+    gy,
+    gz,
+    ax,
+    ay,
+    az
   );
 
-  // Accelerometer cannot determine absolute yaw.
-  float yaw = 0.0f;
-
   //////////////////////////////////
-  // QUATERNION BUILD
+  // GET MADGWICK QUATERNION
   //////////////////////////////////
+  //
+  // q0 = W
+  // q1 = X
+  // q2 = Y
+  // q3 = Z
+  //
 
-  float cy = cos(yaw * 0.5f);
-  float sy = sin(yaw * 0.5f);
-
-  float cp = cos(pitch * 0.5f);
-  float sp = sin(pitch * 0.5f);
-
-  float cr = cos(roll * 0.5f);
-  float sr = sin(roll * 0.5f);
-
-  qw = cr * cp * cy + sr * sp * sy;
-  qx = sr * cp * cy - cr * sp * sy;
-  qy = cr * sp * cy + sr * cp * sy;
-  qz = cr * cp * sy - sr * sp * cy;
+  qw = filter.q0;
+  qx = filter.q1;
+  qy = filter.q2;
+  qz = filter.q3;
 
   //////////////////////////////////
   // QUATERNION NORMALIZATION
@@ -312,23 +417,44 @@ void loop() {
   // OSC MESSAGE
   //
   // VVVV ORDER:
-  // X Y Z W
+  //
+  // 0 = QX
+  // 1 = QY
+  // 2 = QZ
+  // 3 = QW
+  //
+  // 4 = AX
+  // 5 = AY
+  // 6 = AZ
+  //
+  // 7 = GX
+  // 8 = GY
+  // 9 = GZ
   //////////////////////////////////
 
   OSCMessage msg(oscAddress);
 
-  // Quaternion
+  //////////////////////////////////
+  // MADGWICK QUATERNION
+  //////////////////////////////////
+
   msg.add(qx);
   msg.add(qy);
   msg.add(qz);
   msg.add(qw);
 
-  // Accelerometer
+  //////////////////////////////////
+  // ACTUAL ACCELEROMETER DATA
+  //////////////////////////////////
+
   msg.add(ax);
   msg.add(ay);
   msg.add(az);
 
-  // Gyroscope
+  //////////////////////////////////
+  // ACTUAL GYROSCOPE DATA
+  //////////////////////////////////
+
   msg.add(gx);
   msg.add(gy);
   msg.add(gz);
@@ -337,7 +463,10 @@ void loop() {
   // SEND OSC
   //////////////////////////////////
 
-  Udp.beginPacket(outIp, outPort);
+  Udp.beginPacket(
+    outIp,
+    outPort
+  );
 
   msg.send(Udp);
 

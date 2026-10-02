@@ -122,6 +122,7 @@ const el = {
     trajMidiCc: document.getElementById('traj-midi-cc'),
     btnTrajRecordStart: document.getElementById('btn-traj-record-start'),
     btnTrajRecordStop: document.getElementById('btn-traj-record-stop'),
+    btnTrajDiscardLast: document.getElementById('btn-traj-discard-last'),
     btnTrajRecognizeStart: document.getElementById('btn-traj-recognize-start'),
     btnTrajRecognizeStop: document.getElementById('btn-traj-recognize-stop'),
     trajProgressCard: document.getElementById('traj-progress-card'),
@@ -1439,6 +1440,39 @@ function setupEventListeners() {
             }
         } catch (err) {
             showError("Store idle position error: " + err.message);
+        }
+    });
+
+    // Discard Last Recording click event
+    el.btnTrajDiscardLast.addEventListener('click', async () => {
+        const label = el.trajLabel.value.trim();
+        if (!label) {
+            alert("Please type the Gesture Label of the recording you want to discard.");
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to discard/undo the last recorded variant for gesture '${label}'?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/trajectories/discard-last', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ label: label })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                showError(null);
+                alert(data.message);
+                await refreshTrajectoriesList();
+            } else {
+                const errData = await res.json();
+                showError("Discard last recording failed: " + errData.detail);
+                alert("Could not discard: " + errData.detail);
+            }
+        } catch (err) {
+            showError("Discard last recording error: " + err.message);
         }
     });
 }

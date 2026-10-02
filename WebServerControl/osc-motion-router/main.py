@@ -103,6 +103,9 @@ class TrajectoryMidiUpdateModel(BaseModel):
     midi_note: int
     midi_type: str
 
+class TrajectoryDiscardVariantModel(BaseModel):
+    label: str
+
 
 # --- API Endpoints ---
 
@@ -281,6 +284,13 @@ def update_trajectory_midi(traj_id: str, payload: TrajectoryMidiUpdateModel):
     if not success:
         raise HTTPException(status_code=404, detail="Trajectory example not found")
     return {"status": "success"}
+
+@app.post("/api/trajectories/discard-last")
+def discard_last_trajectory_variant(payload: TrajectoryDiscardVariantModel):
+    result = trajectory_manager.discard_last_trajectory_variant(payload.label)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message"))
+    return result
 
 @app.post("/api/trajectories/record/start")
 def record_trajectory_example_start(payload: TrajectoryRecordStartModel):

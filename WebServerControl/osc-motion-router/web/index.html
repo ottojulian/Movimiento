@@ -102,11 +102,12 @@
                 </div>
             </div>
 
-            <div class="flex-btn-group" style="gap: 0.5rem;">
-                <button id="btn-traj-record-start" class="btn btn-primary" style="flex: 1;">Start Recording Template</button>
-                <button id="btn-traj-record-stop" class="btn btn-danger" style="flex: 1; display: none;">Stop & Save Template</button>
-                <button id="btn-traj-recognize-start" class="btn btn-success" style="flex: 1;">Start Recognition</button>
-                <button id="btn-traj-recognize-stop" class="btn btn-danger" style="flex: 1; display: none;">Stop Recognition</button>
+            <div class="flex-btn-group" style="gap: 0.5rem; flex-wrap: wrap;">
+                <button id="btn-traj-record-start" class="btn btn-primary" style="flex: 1; min-width: 140px;">Start Recording Template</button>
+                <button id="btn-traj-record-stop" class="btn btn-danger" style="flex: 1; min-width: 140px; display: none;">Stop & Save Template</button>
+                <button id="btn-traj-discard-last" class="btn btn-warning" style="flex: 1; min-width: 140px;" title="Discard the most recently recorded variant/layer for this gesture label">Discard Last Recording</button>
+                <button id="btn-traj-recognize-start" class="btn btn-success" style="flex: 1; min-width: 140px;">Start Recognition</button>
+                <button id="btn-traj-recognize-stop" class="btn btn-danger" style="flex: 1; min-width: 140px; display: none;">Stop Recognition</button>
             </div>
 
             <div id="traj-progress-card" style="display: none; background-color: #242429; border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; margin-top: 1rem;">

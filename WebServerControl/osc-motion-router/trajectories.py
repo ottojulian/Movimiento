@@ -639,6 +639,40 @@ class TrajectoryManager:
             self._save_json_index(self.trajectories_index_path, self.trajectories_list)
             return True
 
+    def discard_last_trajectory_variant(self, label: str) -> Dict[str, Any]:
+        """Discards the most recently added variant (or the entire template if only 1 exists) for a label."""
+        with self.lock:
+            found = None
+            for item in self.trajectories_list:
+                if item["label"] == label:
+                    found = item
+                    break
+            
+            if not found:
+                return {"status": "error", "message": f"No template found with label '{label}'"}
+            
+            # Reconstruct or verify the vectors list
+            if "vectors" not in found or not found["vectors"]:
+                found["vectors"] = [found["vector"]]
+                
+            if len(found["vectors"]) <= 1:
+                # Only 1 variant remains, delete the whole template
+                self.trajectories_list.remove(found)
+                self._save_json_index(self.trajectories_index_path, self.trajectories_list)
+                return {"status": "deleted", "message": f"Discarded only variant. Entire gesture template '{label}' removed."}
+            else:
+                # Remove the last variant
+                discarded = found["vectors"].pop()
+                # Update current active fallback vector to the previous variant
+                found["vector"] = found["vectors"][-1]
+                found["timestamp"] = time.time()
+                self._save_json_index(self.trajectories_index_path, self.trajectories_list)
+                return {
+                    "status": "success", 
+                    "message": f"Discarded last variant for '{label}'. Remaining variants: {len(found['vectors'])}",
+                    "remaining": len(found["vectors"])
+                }
+
     def _recognize_trajectory(self, channels: List[str], test_vector: List[float]):
         """Compares test_vector with stored examples matching the same channels using DTW."""
         with self.lock:
