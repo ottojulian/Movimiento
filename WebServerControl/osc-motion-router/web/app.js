@@ -137,12 +137,9 @@ const el = {
     trajRecognitionHold: document.getElementById('traj-recognition-hold'),
     trajActionType: document.getElementById('traj-action-type'),
     trajActionOscGroup: document.getElementById('traj-action-osc-group'),
-    trajActionMidiGroup: document.getElementById('traj-action-midi-group'),
     trajActionOscHost: document.getElementById('traj-action-osc-host'),
     trajActionOscPort: document.getElementById('traj-action-osc-port'),
     trajActionOscAddr: document.getElementById('traj-action-osc-addr'),
-    trajActionMidiChan: document.getElementById('traj-action-midi-chan'),
-    trajActionMidiCc: document.getElementById('traj-action-midi-cc'),
     
     // Session Export/Import Controls
     sessionFilename: document.getElementById('session-filename'),
@@ -276,12 +273,8 @@ function populateUIFromConfig() {
     el.trajActionType.value = action.type || "osc";
     
     if (action.type === "midi") {
-        el.trajActionMidiGroup.style.display = 'grid';
         el.trajActionOscGroup.style.display = 'none';
-        el.trajActionMidiChan.value = action.channel || 1;
-        el.trajActionMidiCc.value = action.cc || 22;
     } else {
-        el.trajActionMidiGroup.style.display = 'none';
         el.trajActionOscGroup.style.display = 'grid';
         el.trajActionOscHost.value = action.host || "127.0.0.1";
         el.trajActionOscPort.value = action.port || 9001;
@@ -315,8 +308,6 @@ function gatherConfigFromUI() {
     currentConfig.trajectory.action.type = trajType;
     if (trajType === "midi") {
         currentConfig.trajectory.action.port_name = el.midiGlobalPort.value;
-        currentConfig.trajectory.action.channel = parseInt(el.trajActionMidiChan.value) || 1;
-        currentConfig.trajectory.action.cc = parseInt(el.trajActionMidiCc.value) || 22;
         // Keep placeholder defaults for osc
         currentConfig.trajectory.action.host = currentConfig.trajectory.action.host || "127.0.0.1";
     } else {
@@ -942,18 +933,33 @@ async function refreshMidiPorts() {
         const res = await fetch('/api/midi/ports?_t=' + Date.now(), { cache: 'no-store' });
         const data = await res.json();
         
+        // Check if options actually changed to avoid disrupting the user experience
+        const currentPorts = Array.from(el.midiGlobalPort.options).map(o => o.value).filter(v => v !== "");
+        const newPorts = data.ports || [];
+        
+        // Compare lists
+        const arraysEqual = currentPorts.length === newPorts.length && currentPorts.every((v, i) => v === newPorts[i]);
+        if (arraysEqual && el.midiGlobalPort.value === currentConfig.midi.port_name) {
+            return; // No change, do nothing
+        }
+
         let html = '';
-        if (data.ports.length === 0) {
+        if (newPorts.length === 0) {
             html = `<option value="">No MIDI ports available</option>`;
         } else {
-            html = data.ports.map(p => `<option value="${p}">${p}</option>`).join('');
+            html = newPorts.map(p => `<option value="${p}">${p}</option>`).join('');
         }
+        
+        // Keep track of what was selected
+        const previouslySelected = el.midiGlobalPort.value || currentConfig.midi.port_name;
         
         // Populate global MIDI drop down
         el.midiGlobalPort.innerHTML = html;
         
         // Restore values
-        if (currentConfig.midi.port_name) {
+        if (previouslySelected && newPorts.includes(previouslySelected)) {
+            el.midiGlobalPort.value = previouslySelected;
+        } else if (currentConfig.midi.port_name && newPorts.includes(currentConfig.midi.port_name)) {
             el.midiGlobalPort.value = currentConfig.midi.port_name;
         }
     } catch (err) {
@@ -1131,13 +1137,15 @@ function setupEventListeners() {
         el.oscBindIp, el.oscPort, el.oscAccelAddress, el.oscGyroAddress, el.oscFormat,
         el.oscAccelIndexes, el.oscGyroIndexes,
         el.midiGlobalPort, el.midiGlobalChannel, el.trajThreshold, el.trajDeviationThreshold, el.trajRecognitionHold, el.trajActionType,
-        el.trajActionOscHost, el.trajActionOscPort, el.trajActionOscAddr,
-        el.trajActionMidiChan, el.trajActionMidiCc
+        el.trajActionOscHost, el.trajActionOscPort, el.trajActionOscAddr
     ];
     autoSaveInputs.forEach(input => {
         input.addEventListener('change', saveConfigDebounced);
         input.addEventListener('input', saveConfigDebounced);
     });
+
+    // Refresh MIDI ports when the dropdown gets focus
+    el.midiGlobalPort.addEventListener('focus', refreshMidiPorts);
 
     // Toggle grouped index fields based on format selection
     el.oscFormat.addEventListener('change', () => {
@@ -1151,10 +1159,8 @@ function setupEventListeners() {
     // Toggle trajectory action group visibility on select change
     el.trajActionType.addEventListener('change', () => {
         if (el.trajActionType.value === "midi") {
-            el.trajActionMidiGroup.style.display = 'grid';
             el.trajActionOscGroup.style.display = 'none';
         } else {
-            el.trajActionMidiGroup.style.display = 'none';
             el.trajActionOscGroup.style.display = 'grid';
         }
     });

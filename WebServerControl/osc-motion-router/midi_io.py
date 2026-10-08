@@ -32,6 +32,7 @@ class MIDIManager:
             
         with self.lock:
             if port_name in self.open_ports:
+                self.last_error = ""
                 return self.open_ports[port_name]
             
             try:
@@ -40,6 +41,7 @@ class MIDIManager:
                 port = mido.open_output(port_name)
                 self.open_ports[port_name] = port
                 print(f"Successfully opened MIDI port: {port_name}")
+                self.last_error = ""
                 return port
             except Exception as e:
                 self.last_error = f"Failed to open MIDI port '{port_name}': {e}"

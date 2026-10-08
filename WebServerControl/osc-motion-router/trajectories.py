@@ -771,7 +771,7 @@ class TrajectoryManager:
             if not port_name:
                 port_name = config_manager.get("midi", {}).get("port_name", "")
             
-            # Use specific template's MIDI settings or fallback to globals
+            # Use specific template's MIDI settings or fallback to defaults
             channel = 1
             cc_num = 22
             note_num = 60
@@ -782,9 +782,6 @@ class TrajectoryManager:
                 cc_num = matched_traj.get("midi_cc", 22)
                 note_num = matched_traj.get("midi_note", 60)
                 midi_type = matched_traj.get("midi_type", "cc")
-            else:
-                channel = action.get("channel", 1)
-                cc_num = action.get("cc", 22)
             
             value = action.get("value", 127)
             

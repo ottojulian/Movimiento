@@ -35,7 +35,7 @@
     "deviation_threshold": 0.6,
     "recognition_hold": 3,
     "action": {
-      "type": "midi",
+      "type": "osc",
       "host": "127.0.0.1",
       "port": 9001,
       "address": "/motion/recognized",

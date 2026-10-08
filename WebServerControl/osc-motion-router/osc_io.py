@@ -63,15 +63,22 @@ class OSCReceiverManager:
         with self.lock:
             return list(self.observed_messages)
 
-    def send_osc_message(self, host: str, port: int, address: str, value: float):
-        """Sends an OSC message containing a single float value."""
+    def send_osc_message(self, host: str, port: int, address: str, value: Any):
+        """Sends an OSC message containing a single value (float, string, etc.)."""
         try:
             key = (host, port)
             with self.clients_lock:
                 if key not in self.clients:
                     self.clients[key] = SimpleUDPClient(host, port)
                 client = self.clients[key]
-            client.send_message(address, float(value))
+            
+            # Try to cast to float if possible, otherwise send as-is (e.g. for string labels)
+            try:
+                val_to_send = float(value)
+            except (ValueError, TypeError):
+                val_to_send = value
+                
+            client.send_message(address, val_to_send)
         except Exception as e:
             print(f"Error sending OSC message to {host}:{port} {address}: {e}", file=sys.stderr)
 

@@ -141,10 +141,22 @@ def get_status():
     
     # Determine MIDI state
     midi_active = False
-    if configured_midi_port in midi_ports:
-        # Check if actually cached/open
-        with midi_manager.lock:
-            midi_active = configured_midi_port in midi_manager.open_ports
+    if configured_midi_port:
+        if configured_midi_port in midi_ports:
+            # Auto-open/ensure port is open if it's connected to make status turn green
+            port = midi_manager._get_or_open_port(configured_midi_port)
+            if port:
+                midi_active = True
+        else:
+            # If the port is not in available ports but was open, let's close and remove it from cache
+            with midi_manager.lock:
+                if configured_midi_port in midi_manager.open_ports:
+                    try:
+                        midi_manager.open_ports[configured_midi_port].close()
+                        print(f"Closed unplugged MIDI port: {configured_midi_port}")
+                    except Exception:
+                        pass
+                    del midi_manager.open_ports[configured_midi_port]
     
     return {
         "osc_receiver_running": osc_status["running"],
@@ -165,6 +177,10 @@ def get_config():
 
 @app.post("/api/config")
 def update_config(data: Dict[str, Any]):
+    # Get previous config
+    old_config = config_manager.get_all()
+    old_midi_port = old_config.get("midi", {}).get("port_name", "")
+    
     # Save incoming dictionary
     config_manager.update_all(data)
     
@@ -173,6 +189,18 @@ def update_config(data: Dict[str, Any]):
     
     # Clear client caches for outgoing OSC if outputs changed
     osc_receiver.clear_clients_cache()
+    
+    # If the midi port changed, let's close the old one to release resource
+    new_midi_port = data.get("midi", {}).get("port_name", "") if data.get("midi") else ""
+    if old_midi_port and old_midi_port != new_midi_port:
+        with midi_manager.lock:
+            if old_midi_port in midi_manager.open_ports:
+                try:
+                    midi_manager.open_ports[old_midi_port].close()
+                    print(f"Closed previously configured MIDI port: {old_midi_port}")
+                except Exception:
+                    pass
+                del midi_manager.open_ports[old_midi_port]
     
     return {"status": "success", "config": config_manager.get_all()}
 
